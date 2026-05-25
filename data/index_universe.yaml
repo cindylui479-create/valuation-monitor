@@ -1,0 +1,265 @@
+# 内置指数池（YAML，版本化提交）
+# M1 仅包含 A 股 5 只宽基；M2 起追加行业/主题；M3 加港股 / 美股。
+
+markets:
+  - code: A
+    name: 中国 A 股
+    currency: CNY
+    tz: Asia/Shanghai
+  - code: HK
+    name: 香港
+    currency: HKD
+    tz: Asia/Hong_Kong
+  - code: US
+    name: 美国
+    currency: USD
+    tz: America/New_York
+
+indices:
+  - code: "000300.SH"
+    name: 沪深300
+    market: A
+    category: 宽基
+    data_source: akshare
+    history_start_date: "2005-04-08"
+    funds:
+      - { code: "510300.SH",  name: 华泰柏瑞沪深300ETF, type: ETF,       fee_rate: 0.0015 }
+      - { code: "510310.SH",  name: 易方达沪深300ETF,   type: ETF,       fee_rate: 0.0015 }
+      - { code: "510330.SH",  name: 华夏沪深300ETF,     type: ETF,       fee_rate: 0.0015 }
+      - { code: "110020",     name: 易方达沪深300联接A, type: OPEN_FUND, fee_rate: 0.0050 }
+
+  - code: "000905.SH"
+    name: 中证500
+    market: A
+    category: 宽基
+    data_source: akshare
+    history_start_date: "2007-01-15"
+    funds:
+      - { code: "510500.SH", name: 南方中证500ETF,  type: ETF, fee_rate: 0.0050 }
+      - { code: "159922.SZ", name: 嘉实中证500ETF,  type: ETF, fee_rate: 0.0050 }
+
+  - code: "000906.SH"
+    name: 中证800
+    market: A
+    category: 宽基
+    data_source: akshare
+    history_start_date: "2007-01-15"
+    funds:
+      - { code: "512080.SH", name: 嘉实中证800ETF, type: ETF, fee_rate: 0.0050 }
+
+  - code: "000852.SH"
+    name: 中证1000
+    market: A
+    category: 宽基
+    data_source: akshare
+    history_start_date: "2014-10-17"
+    funds:
+      - { code: "512100.SH", name: 南方中证1000ETF, type: ETF, fee_rate: 0.0050 }
+      - { code: "159845.SZ", name: 华夏中证1000ETF, type: ETF, fee_rate: 0.0050 }
+
+  - code: "000016.SH"
+    name: 上证50
+    market: A
+    category: 宽基
+    data_source: akshare
+    history_start_date: "2004-01-02"
+    funds:
+      - { code: "510050.SH", name: 华夏上证50ETF, type: ETF, fee_rate: 0.0050 }
+
+  - code: "000903.SH"
+    name: 中证100
+    market: A
+    category: 宽基
+    data_source: akshare
+    history_start_date: "2006-05-29"
+    funds:
+      - { code: "562000.SH", name: 国寿安保中证100ETF, type: ETF, fee_rate: 0.0050 }
+
+  - code: "399673.SZ"
+    name: 创业板50
+    market: A
+    category: 主题
+    industry_raw: "创业板成长"
+    data_source: akshare
+    history_start_date: "2014-06-18"
+    funds:
+      - { code: "159949.SZ", name: 华安创业板50ETF, type: ETF, fee_rate: 0.0050 }
+      - { code: "159682.SZ", name: 易方达创业板50ETF, type: ETF, fee_rate: 0.0015 }
+
+  - code: "000015.SH"
+    name: 上证红利
+    market: A
+    category: 主题
+    industry_raw: "红利"
+    data_source: akshare
+    history_start_date: "2005-01-04"
+    funds:
+      - { code: "510880.SH", name: 华泰柏瑞上证红利ETF, type: ETF, fee_rate: 0.0050 }
+
+  # ----- M3 末扩充：A 股 sina + csindex 路径（lg 池外）-----
+  - code: "000932.SH"
+    name: 中证消费
+    market: A
+    category: 行业
+    industry_raw: "中证主要消费"
+    data_source: akshare
+    history_start_date: "2009-07-03"
+    funds:
+      - { code: "159928.SZ", name: 汇添富中证主要消费ETF, type: ETF, fee_rate: 0.0050 }
+
+  - code: "H30269.CSI"
+    name: 中证红利低波动
+    market: A
+    category: 主题
+    industry_raw: "红利+低波"
+    data_source: akshare
+    history_start_date: "2019-01-18"
+    funds:
+      - { code: "512890.SH", name: 华泰柏瑞中证红利低波动ETF, type: ETF, fee_rate: 0.0050 }
+      - { code: "159525.SZ", name: 红利低波 LOF, type: OPEN_FUND, fee_rate: 0.0080 }
+
+  - code: "000001.SH"
+    name: 上证综指
+    market: A
+    category: 综合
+    industry_raw: "上证全部"
+    data_source: akshare
+    history_start_date: "1990-12-19"
+    funds:
+      - { code: "510760.SH", name: 上证综指 ETF, type: ETF, fee_rate: 0.0050 }
+
+  - code: "399001.SZ"
+    name: 深证成指
+    market: A
+    category: 综合
+    industry_raw: "深证主板成份"
+    data_source: akshare
+    history_start_date: "1991-04-03"
+    funds:
+      - { code: "159901.SZ", name: 深证成指 ETF, type: ETF, fee_rate: 0.0050 }
+
+  - code: "399006.SZ"
+    name: 创业板指
+    market: A
+    category: 综合
+    industry_raw: "创业板成份"
+    data_source: akshare
+    history_start_date: "2010-06-01"
+    funds:
+      - { code: "159915.SZ", name: 易方达创业板 ETF, type: ETF, fee_rate: 0.0050 }
+
+  - code: "000688.SH"
+    name: 科创板 50
+    market: A
+    category: 综合
+    industry_raw: "科创板成份"
+    data_source: akshare
+    history_start_date: "2020-07-22"
+    funds:
+      - { code: "588000.SH", name: 华夏科创板50 ETF, type: ETF, fee_rate: 0.0050 }
+      - { code: "588080.SH", name: 易方达科创板50 ETF, type: ETF, fee_rate: 0.0050 }
+
+  # =====================================================
+  # 港股（M3）— 全部用 yfinance；估值仅有当日 PE 快照（^HSI/^HSCE 无；3033.HK ETF 有）
+  # =====================================================
+  - code: "^HSI"
+    name: 恒生指数
+    market: HK
+    category: 宽基
+    data_source: yfinance
+    history_start_date: "1986-12-31"
+    funds:
+      - { code: "2800.HK", name: 盈富基金, type: ETF, fee_rate: 0.0010 }
+      - { code: "159920.SZ", name: 华夏恒生ETF, type: ETF, fee_rate: 0.0060 }
+
+  - code: "^HSCE"
+    name: 恒生中国企业
+    market: HK
+    category: 宽基
+    data_source: yfinance
+    history_start_date: "1994-08-08"
+    funds:
+      - { code: "2828.HK", name: 恒生国企ETF, type: ETF, fee_rate: 0.0060 }
+
+  - code: "3033.HK"
+    name: 恒生科技 (ETF)
+    market: HK
+    category: 主题
+    industry_raw: "港股科技"
+    data_source: yfinance
+    history_start_date: "2020-12-30"
+    funds:
+      - { code: "3033.HK", name: 国泰恒生科技ETF, type: ETF, fee_rate: 0.0099 }
+      - { code: "513180.SH", name: 华夏恒生科技ETF, type: ETF, fee_rate: 0.0060 }
+
+  - code: "3110.HK"
+    name: 港股红利低波 (ETF)
+    market: HK
+    category: 主题
+    industry_raw: "港股红利+低波"
+    data_source: yfinance
+    history_start_date: "2021-05-12"
+    funds:
+      - { code: "3110.HK", name: Global X 恒生高股息率 ETF, type: ETF, fee_rate: 0.0068 }
+
+  # =====================================================
+  # 美股（M3）— yfinance；用 ETF 代码作为指数代理，全部含当日 PE 快照
+  # =====================================================
+  - code: "SPY"
+    name: 标普500 (SPY)
+    market: US
+    category: 宽基
+    data_source: yfinance
+    history_start_date: "1993-01-29"
+    funds:
+      - { code: "SPY", name: SPDR 标普500ETF, type: ETF, fee_rate: 0.000945 }
+      - { code: "513500.SH", name: 博时标普500ETF, type: ETF, fee_rate: 0.0060 }
+
+  - code: "QQQ"
+    name: 纳指100 (QQQ)
+    market: US
+    category: 宽基
+    data_source: yfinance
+    history_start_date: "1999-03-10"
+    funds:
+      - { code: "QQQ", name: Invesco QQQ Trust, type: ETF, fee_rate: 0.002 }
+      - { code: "513100.SH", name: 国泰纳指ETF, type: ETF, fee_rate: 0.0080 }
+
+  - code: "DIA"
+    name: 道琼斯工业 (DIA)
+    market: US
+    category: 宽基
+    data_source: yfinance
+    history_start_date: "1998-01-20"
+    funds:
+      - { code: "DIA", name: SPDR 道指ETF, type: ETF, fee_rate: 0.0016 }
+
+  - code: "XLK"
+    name: 美股科技 (XLK)
+    market: US
+    category: 行业
+    industry_raw: "Information Technology"
+    data_source: yfinance
+    history_start_date: "1998-12-22"
+    funds:
+      - { code: "XLK", name: SPDR 科技 ETF, type: ETF, fee_rate: 0.0009 }
+
+  - code: "XLV"
+    name: 美股医疗 (XLV)
+    market: US
+    category: 行业
+    industry_raw: "Health Care"
+    data_source: yfinance
+    history_start_date: "1998-12-22"
+    funds:
+      - { code: "XLV", name: SPDR 医疗 ETF, type: ETF, fee_rate: 0.0009 }
+
+  - code: "XLF"
+    name: 美股金融 (XLF)
+    market: US
+    category: 行业
+    industry_raw: "Financials"
+    data_source: yfinance
+    history_start_date: "1998-12-22"
+    funds:
+      - { code: "XLF", name: SPDR 金融 ETF, type: ETF, fee_rate: 0.0009 }

@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+dist/
+build/
+.next/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Claude Code runtime
+.claude/
+
+# App data (runtime)
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/backups/
+logs/
+
+# Env
+.env
+.env.local
+
+# Frontend build output
+frontend/dist/
+frontend/tsconfig.tsbuildinfo

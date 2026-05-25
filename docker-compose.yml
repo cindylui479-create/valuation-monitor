@@ -1,0 +1,30 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: vm-backend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      - DB_PATH=/data/valuation.db
+      - LOG_LEVEL=INFO
+      - TZ=Asia/Shanghai
+      - SCHEDULE_A_ENABLED=true
+      - SCHEDULE_HK_ENABLED=false
+      - SCHEDULE_US_ENABLED=false
+      - TUSHARE_TOKEN=${TUSHARE_TOKEN:-}
+      - CORS_ALLOW_ORIGINS=http://127.0.0.1:5173
+    volumes:
+      - ./data:/data
+      - ./logs:/logs
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: vm-frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5173:80"
+    depends_on:
+      - backend
