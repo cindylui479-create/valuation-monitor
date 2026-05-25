@@ -7,9 +7,10 @@ import { usePeSource } from "@/hooks/usePeSource";
 import { isPriceFallback, temperatureColor, temperatureSourceLabel, tierLabel, } from "@/utils/temperature";
 import StockListSection from "./StockListSection";
 import FundListSection from "./FundListSection";
+import HoldingListSection from "./HoldingListSection";
 export default function Watchlist() {
-    const [tab, setTab] = useState("INDEX");
-    return (_jsxs("div", { className: "watchlist-page", children: [_jsx("h2", { children: "\u81EA\u9009" }), _jsxs("div", { className: "view-toggle", style: { marginBottom: 16 }, children: [_jsx("button", { className: tab === "INDEX" ? "active" : "", onClick: () => setTab("INDEX"), children: "\u6307\u6570" }), _jsx("button", { className: tab === "STOCK" ? "active" : "", onClick: () => setTab("STOCK"), children: "A \u80A1\u4E2A\u80A1" }), _jsx("button", { className: tab === "FUND" ? "active" : "", onClick: () => setTab("FUND"), children: "\u57FA\u91D1" })] }), tab === "INDEX" && _jsx(IndexList, {}), tab === "STOCK" && _jsx(StockListSection, {}), tab === "FUND" && _jsx(FundListSection, {})] }));
+    const [tab, setTab] = useState("HOLDING");
+    return (_jsxs("div", { className: "watchlist-page", children: [_jsx("h2", { children: "\u6211\u7684" }), _jsxs("div", { className: "view-toggle", style: { marginBottom: 16 }, children: [_jsx("button", { className: tab === "HOLDING" ? "active" : "", onClick: () => setTab("HOLDING"), children: "\u6301\u4ED3 + \u52A0\u6743\u6E29\u5EA6" }), _jsx("button", { className: tab === "INDEX" ? "active" : "", onClick: () => setTab("INDEX"), children: "\u81EA\u9009\u6307\u6570" }), _jsx("button", { className: tab === "STOCK" ? "active" : "", onClick: () => setTab("STOCK"), children: "\u81EA\u9009\u4E2A\u80A1" }), _jsx("button", { className: tab === "FUND" ? "active" : "", onClick: () => setTab("FUND"), children: "\u57FA\u91D1" })] }), tab === "HOLDING" && _jsx(HoldingListSection, {}), tab === "INDEX" && _jsx(IndexList, {}), tab === "STOCK" && _jsx(StockListSection, {}), tab === "FUND" && _jsx(FundListSection, {})] }));
 }
 function IndexList() {
     const qc = useQueryClient();

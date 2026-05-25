@@ -11,27 +11,34 @@ import {
 } from "@/utils/temperature";
 import StockListSection from "./StockListSection";
 import FundListSection from "./FundListSection";
+import HoldingListSection from "./HoldingListSection";
 
-type Tab = "INDEX" | "STOCK" | "FUND";
+type Tab = "HOLDING" | "INDEX" | "STOCK" | "FUND";
 
 export default function Watchlist() {
-  const [tab, setTab] = useState<Tab>("INDEX");
+  const [tab, setTab] = useState<Tab>("HOLDING");
 
   return (
     <div className="watchlist-page">
-      <h2>自选</h2>
+      <h2>我的</h2>
       <div className="view-toggle" style={{ marginBottom: 16 }}>
+        <button
+          className={tab === "HOLDING" ? "active" : ""}
+          onClick={() => setTab("HOLDING")}
+        >
+          持仓 + 加权温度
+        </button>
         <button
           className={tab === "INDEX" ? "active" : ""}
           onClick={() => setTab("INDEX")}
         >
-          指数
+          自选指数
         </button>
         <button
           className={tab === "STOCK" ? "active" : ""}
           onClick={() => setTab("STOCK")}
         >
-          A 股个股
+          自选个股
         </button>
         <button
           className={tab === "FUND" ? "active" : ""}
@@ -41,6 +48,7 @@ export default function Watchlist() {
         </button>
       </div>
 
+      {tab === "HOLDING" && <HoldingListSection />}
       {tab === "INDEX" && <IndexList />}
       {tab === "STOCK" && <StockListSection />}
       {tab === "FUND" && <FundListSection />}

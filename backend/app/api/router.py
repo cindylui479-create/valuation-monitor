@@ -7,6 +7,8 @@ from app.api import (
     exports,
     funds,
     health,
+    holdings,
+    search,
     index_detail,
     indices,
     overrides,
@@ -36,3 +38,5 @@ api_router.include_router(pipeline_runs.router, tags=["health"])
 api_router.include_router(data_quality.router, tags=["data-quality"])
 api_router.include_router(stocks.router, tags=["stocks"])
 api_router.include_router(funds.router, tags=["funds"])
+api_router.include_router(holdings.router, tags=["holdings"])
+api_router.include_router(search.router, tags=["search"])
