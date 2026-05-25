@@ -47,7 +47,16 @@ export default function Signals() {
   return (
     <div className="signals-page">
       <div className="page-header">
-        <h2>估值信号</h2>
+        <h2>
+          估值信号
+          <Link
+            to="/temperature/effectiveness"
+            style={{
+              fontSize: 13, marginLeft: 16,
+              color: "#2563eb", textDecoration: "none",
+            }}
+          >📊 温度有效性 →</Link>
+        </h2>
         <div className="controls">
           <div className="view-toggle">
             <button

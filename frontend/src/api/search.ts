@@ -6,6 +6,7 @@ export interface SearchHit {
   name: string;
   market: string | null;
   extra: string | null;
+  in_local?: boolean;  // SRS v1.3.0 K：是否已在本地跟踪库
 }
 
 export function search(

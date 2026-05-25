@@ -41,11 +41,14 @@ class HoldingItem(BaseModel):
     id: int
     entity_type: str
     entity_code: str
-    entity_name: str | None             # 解析后的名称
-    market_value: str                    # Decimal as string（按数量时实时算 = quantity × latest_price）
-    quantity: str | None                 # 股数/份数（按数量录入时填）
-    latest_price: str | None             # 实时单价（按数量录入时显示）
-    input_mode: str                      # 'value' or 'quantity'
+    entity_name: str | None
+    market_value: str
+    quantity: str | None
+    latest_price: str | None
+    input_mode: str
+    cost_basis: str | None
+    unrealized_pnl: str | None
+    pnl_pct: str | None
     weight_pct: str | None
     temperature: str | None
     tier: str | None
@@ -58,26 +61,31 @@ class HoldingItem(BaseModel):
 
 
 class PortfolioSummary(BaseModel):
-    total_value: str                     # 总市值（所有 holding 之和）
-    weighted_temperature: str | None     # 基于有温度部分加权
-    valued_value: str                    # 有温度的市值之和
-    coverage_pct: str                    # valued_value / total_value
-    tier_distribution: dict[str, str]    # tier → 市值占比
+    total_value: str
+    weighted_temperature: str | None
+    valued_value: str
+    coverage_pct: str
+    tier_distribution: dict[str, str]
+    # SRS v1.3.0 A：组合层 P&L 汇总（含 cost_basis 的持仓项之和）
+    total_cost_basis: str
+    total_unrealized_pnl: str
+    total_pnl_pct: str | None
     items: list[HoldingItem]
 
 
 class AddHoldingRequest(BaseModel):
     entity_type: str = Field(..., pattern=r"^(INDEX|STOCK|FUND)$")
     entity_code: str = Field(..., min_length=1, max_length=32)
-    # market_value 与 quantity 二选一（quantity 优先，会按当前 close 算 mv）
     market_value: float | None = Field(default=None, gt=0)
     quantity: float | None = Field(default=None, gt=0)
+    cost_basis: float | None = Field(default=None, gt=0)
     note: str | None = Field(default=None, max_length=64)
 
 
 class UpdateHoldingRequest(BaseModel):
     market_value: float | None = Field(default=None, gt=0)
     quantity: float | None = Field(default=None, gt=0)
+    cost_basis: float | None = Field(default=None, ge=0)  # 0 表示清除成本
     note: str | None = Field(default=None, max_length=64)
 
 
@@ -177,6 +185,9 @@ def _build_summary(session: Session, holdings: list[Holding]) -> PortfolioSummar
     valued = Decimal(0)
     weighted_temp_num = Decimal(0)
     tier_mv: dict[str, Decimal] = {}
+    # SRS v1.3.0 A：组合 P&L 汇总（仅含 cost_basis 非空的持仓）
+    total_cb = Decimal(0)
+    total_mv_for_pnl = Decimal(0)
 
     resolved = []
     for h in holdings:
@@ -184,6 +195,9 @@ def _build_summary(session: Session, holdings: list[Holding]) -> PortfolioSummar
         eff_mv = _effective_market_value(h, info)
         resolved.append((h, info, eff_mv))
         total += eff_mv
+        if h.cost_basis is not None:
+            total_cb += h.cost_basis
+            total_mv_for_pnl += eff_mv
         if info["temperature"] is not None:
             t = Decimal(info["temperature"])
             valued += eff_mv
@@ -197,9 +211,17 @@ def _build_summary(session: Session, holdings: list[Holding]) -> PortfolioSummar
         k: format(v / valued * Decimal(100), ".2f")
         for k, v in tier_mv.items()
     } if valued > 0 else {}
+    total_pnl = total_mv_for_pnl - total_cb
+    total_pnl_pct = (total_pnl / total_cb * Decimal(100)) if total_cb > 0 else None
 
     for h, info, eff_mv in resolved:
         weight = (eff_mv / total * Decimal(100)) if total > 0 else None
+        pnl = None
+        pnl_pct = None
+        if h.cost_basis is not None:
+            pnl = eff_mv - h.cost_basis
+            if h.cost_basis > 0:
+                pnl_pct = pnl / h.cost_basis * Decimal(100)
         items.append(HoldingItem(
             id=h.id,
             entity_type=h.entity_type,
@@ -209,6 +231,9 @@ def _build_summary(session: Session, holdings: list[Holding]) -> PortfolioSummar
             quantity=decimal_to_str(h.quantity),
             latest_price=info.get("latest_price"),
             input_mode="quantity" if h.quantity is not None else "value",
+            cost_basis=decimal_to_str(h.cost_basis),
+            unrealized_pnl=decimal_to_str(pnl),
+            pnl_pct=format(pnl_pct, ".2f") if pnl_pct is not None else None,
             weight_pct=format(weight, ".2f") if weight is not None else None,
             temperature=info["temperature"],
             tier=info["tier"],
@@ -226,6 +251,9 @@ def _build_summary(session: Session, holdings: list[Holding]) -> PortfolioSummar
         valued_value=decimal_to_str(valued) or "0",
         coverage_pct=decimal_to_str(coverage) or "0",
         tier_distribution=tier_dist,
+        total_cost_basis=decimal_to_str(total_cb) or "0",
+        total_unrealized_pnl=decimal_to_str(total_pnl) or "0",
+        total_pnl_pct=format(total_pnl_pct, ".2f") if total_pnl_pct is not None else None,
         items=items,
     )
 
@@ -265,11 +293,13 @@ def add_holding(
     else:
         snapshot_mv = Decimal(str(body.market_value))
 
+    cost_basis_dec = Decimal(str(body.cost_basis)) if body.cost_basis is not None else None
     h = Holding(
         entity_type=body.entity_type,
         entity_code=entity_code,
         market_value=snapshot_mv,
         quantity=quantity_dec,
+        cost_basis=cost_basis_dec,
         note=body.note,
         added_at=now_iso(),
         updated_at=now_iso(),
@@ -282,7 +312,17 @@ def add_holding(
         raise HTTPException(409, f"持仓已存在或冲突：{e}")
 
     info = _resolve_entity(session, h.entity_type, h.entity_code)
+    return _single_item(session, h, info)
+
+
+def _single_item(session: Session, h: Holding, info: dict) -> HoldingItem:
     eff_mv = _effective_market_value(h, info)
+    pnl = None
+    pnl_pct = None
+    if h.cost_basis is not None:
+        pnl = eff_mv - h.cost_basis
+        if h.cost_basis > 0:
+            pnl_pct = pnl / h.cost_basis * Decimal(100)
     return HoldingItem(
         id=h.id, entity_type=h.entity_type, entity_code=h.entity_code,
         entity_name=info["name"],
@@ -290,6 +330,9 @@ def add_holding(
         quantity=decimal_to_str(h.quantity),
         latest_price=info.get("latest_price"),
         input_mode="quantity" if h.quantity is not None else "value",
+        cost_basis=decimal_to_str(h.cost_basis),
+        unrealized_pnl=decimal_to_str(pnl),
+        pnl_pct=format(pnl_pct, ".2f") if pnl_pct is not None else None,
         weight_pct=None,
         temperature=info["temperature"], tier=info["tier"],
         temperature_source=info["temperature_source"],
@@ -317,25 +360,14 @@ def update_holding(
     elif body.market_value is not None:
         h.market_value = Decimal(str(body.market_value))
         h.quantity = None  # 切回 value 模式
+    if body.cost_basis is not None:
+        h.cost_basis = Decimal(str(body.cost_basis)) if body.cost_basis > 0 else None
     if body.note is not None:
         h.note = body.note
     h.updated_at = now_iso()
     session.commit()
     info = _resolve_entity(session, h.entity_type, h.entity_code)
-    eff_mv = _effective_market_value(h, info)
-    return HoldingItem(
-        id=h.id, entity_type=h.entity_type, entity_code=h.entity_code,
-        entity_name=info["name"],
-        market_value=decimal_to_str(eff_mv) or "0",
-        quantity=decimal_to_str(h.quantity),
-        latest_price=info.get("latest_price"),
-        input_mode="quantity" if h.quantity is not None else "value",
-        weight_pct=None,
-        temperature=info["temperature"], tier=info["tier"],
-        temperature_source=info["temperature_source"],
-        pe_ttm=info["pe_ttm"], pb=info["pb"],
-        note=h.note, added_at=h.added_at, updated_at=h.updated_at,
-    )
+    return _single_item(session, h, info)
 
 
 @router.delete("/holdings/{holding_id}", status_code=204)

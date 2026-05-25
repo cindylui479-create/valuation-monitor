@@ -67,6 +67,14 @@ class ValuationPoint(BaseModel):
     tier: str | None
 
 
+class AnchorComparison(BaseModel):
+    """SRS v1.3.0 J：5 种锚下的温度对比（让用户在切换前看见）。"""
+    anchor: str
+    temperature: str | None
+    tier: str | None
+    available: bool          # 该字段是否有足够分位数据
+
+
 class StockDetail(BaseModel):
     code: str
     name: str
@@ -80,6 +88,9 @@ class StockDetail(BaseModel):
     latest_valuation: ValuationPoint | None
     quotes: list[QuotePoint]
     valuation_series: list[ValuationPoint]
+    # SRS v1.3.0 J：所有锚的温度对比 + 当前行业建议
+    anchor_comparisons: list[AnchorComparison] = []
+    industry_default_anchor: str | None = None  # 该行业的"行业默认推荐"
 
 
 class AnchorUpdate(BaseModel):
@@ -164,6 +175,31 @@ def stock_detail(code: str, session: Session = Depends(db_session)) -> StockDeta
     quotes = list(reversed(stock_repo.list_recent_quotes(session, s.id, limit=3000)))
     series = stock_repo.valuation_series(session, s.id, window="10y")
 
+    # SRS v1.3.0 J：算 5 种锚下的温度（从 latest_valuation 的百分位反推）
+    from app.valuation.anchor import temperature_from_anchor
+    from app.valuation import tier_of, DEFAULT_BOUNDARIES
+    from decimal import Decimal
+    comparisons: list[AnchorComparison] = []
+    if latest_v is not None:
+        for anc in ALL_ANCHORS:
+            t = temperature_from_anchor(
+                anc,
+                pe_pctl=latest_v.pe_percentile,
+                pb_pctl=latest_v.pb_percentile,
+                ps_pctl=latest_v.ps_percentile,
+                dy_pctl=latest_v.dy_percentile,
+            )
+            if t is not None:
+                tier_pctl = t / Decimal(100)
+                tier = tier_of(tier_pctl, DEFAULT_BOUNDARIES)
+                comparisons.append(AnchorComparison(
+                    anchor=anc, temperature=_fmt(t), tier=tier, available=True,
+                ))
+            else:
+                comparisons.append(AnchorComparison(
+                    anchor=anc, temperature=None, tier=None, available=False,
+                ))
+
     return StockDetail(
         code=s.code, name=s.name, industry=s.industry_raw,
         anchor=anchor, available_anchors=list(ALL_ANCHORS),
@@ -173,6 +209,8 @@ def stock_detail(code: str, session: Session = Depends(db_session)) -> StockDeta
         latest_valuation=_v_point(latest_v) if latest_v else None,
         quotes=[_q_point(q) for q in quotes],
         valuation_series=[_v_point(v) for v in series],
+        anchor_comparisons=comparisons,
+        industry_default_anchor=default_anchor_for_industry(s.industry_raw),
     )
 
 

@@ -32,6 +32,7 @@ class Holding(Base):
     entity_code: Mapped[str] = mapped_column(String(32))          # 000300.SH / 600519.SH / 005827
     market_value: Mapped[Decimal] = mapped_column(Numeric(18, 2)) # 用户输入的当前市值（元）；quantity 非空时此字段为后端落库时的快照
     quantity: Mapped[Decimal | None] = mapped_column(Numeric(18, 4))  # 股数/份数（按数量模式录入时填）
+    cost_basis: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))  # 持仓成本总额（元），可选；用于算未实现盈亏
     note: Mapped[str | None] = mapped_column(String(64))
     added_at: Mapped[str] = mapped_column(String(32))
     updated_at: Mapped[str] = mapped_column(String(32))

@@ -60,3 +60,4 @@ class BacktestResponse(BaseModel):
     threshold: StrategyResultDTO
     dca: StrategyResultDTO | None
     buy_hold: StrategyResultDTO
+    by_temperature: StrategyResultDTO | None = None

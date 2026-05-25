@@ -4,6 +4,7 @@ import { fetchPreferences, updatePreferences } from "@/api/preferences";
 import { fetchHealth } from "@/api/health";
 import { fetchPipelineRuns } from "@/api/pipelineRuns";
 import DataQualitySection from "./DataQualitySection";
+import TushareUsageSection from "./TushareUsageSection";
 
 const SCHEDULE_TABLE = [
   { market: "A", time: "16:30 (UTC+8)", note: "A 股收盘后 30 分钟" },
@@ -91,6 +92,8 @@ export default function Settings() {
           系统启动后自动跑；只要 uvicorn 进程在运行，每天会按此时刻自动拉取数据 + 计算分位 + 生成信号 + 刷新定投提醒。
         </p>
       </section>
+
+      <TushareUsageSection />
 
       <DataQualitySection />
 

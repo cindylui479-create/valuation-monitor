@@ -116,11 +116,66 @@ export default function StockDetail() {
             disabled={anchorMut.isPending}
           >
             {data.available_anchors.map((a) => (
-              <option key={a} value={a}>{ANCHOR_LABEL[a] ?? a}</option>
+              <option key={a} value={a}>
+                {ANCHOR_LABEL[a] ?? a}
+                {data.industry_default_anchor === a && "（行业默认）"}
+              </option>
             ))}
           </select>
           <span className="hint" style={{ margin: 0 }}>{ANCHOR_HINT[data.anchor]}</span>
         </label>
+
+        {/* SRS v1.3.0 J：所有锚对比 */}
+        {data.anchor_comparisons.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            <p className="hint" style={{ marginBottom: 6 }}>
+              <strong>5 种估值锚下的温度对比</strong> — 切换前先看哪个口径与你的判断最一致。
+            </p>
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+              gap: 8,
+            }}>
+              {data.anchor_comparisons.map((c) => {
+                const t = c.temperature ? parseFloat(c.temperature) : null;
+                const isCurrent = c.anchor === data.anchor;
+                const isDefault = c.anchor === data.industry_default_anchor;
+                return (
+                  <div
+                    key={c.anchor}
+                    onClick={() => !isCurrent && c.available && anchorMut.mutate(c.anchor)}
+                    style={{
+                      background: isCurrent ? "#dbeafe" : "white",
+                      border: `2px solid ${isCurrent ? "#2563eb" : "#e5e7eb"}`,
+                      padding: 10, borderRadius: 4,
+                      cursor: c.available && !isCurrent ? "pointer" : "default",
+                      opacity: c.available ? 1 : 0.5,
+                    }}
+                  >
+                    <div style={{ fontSize: 11, color: "#6b7280", display: "flex", justifyContent: "space-between" }}>
+                      <span>{ANCHOR_LABEL[c.anchor] ?? c.anchor}</span>
+                      {isDefault && <span style={{ color: "#15803d" }}>行业默认</span>}
+                      {isCurrent && <span style={{ color: "#2563eb" }}>当前</span>}
+                    </div>
+                    <div style={{
+                      fontSize: 20, fontWeight: 600,
+                      color: c.available ? "#1f2937" : "#9ca3af",
+                    }}>
+                      {t != null ? t.toFixed(1) : "—"}
+                    </div>
+                    <div style={{ fontSize: 11, color: "#6b7280" }}>
+                      {c.tier ?? "无数据"}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="hint" style={{ marginTop: 8 }}>
+              点击卡片切换锚（虚显的没有足够分位数据）。锚的语义会显著改变"贵/便宜"的判断：
+              银行股 PB 锚低估时 PE 锚可能合理，因为 ROE 高拉低了 PE。
+            </p>
+          </div>
+        )}
       </section>
 
       <section className="chart-block">

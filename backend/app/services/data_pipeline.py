@@ -178,6 +178,16 @@ def run_for_market(session: Session, market: str, target_date: date | None = Non
         errors.append(f"dca {market}: {e}")
         log.error("pipeline.dca_failed", market=market, error=str(e))
 
+    # SRS v1.3.0 D：每日批处理末尾自动备份（仅在 A 市场跑完后做一次，避免每市场重复）
+    if market == "A":
+        try:
+            from app.services import backup_service
+
+            backup_service.daily_backup()
+        except Exception as e:
+            errors.append(f"backup: {e}")
+            log.error("pipeline.backup_failed", error=str(e)[:200])
+
     finished = now_iso()
     success = not errors
     log.info(

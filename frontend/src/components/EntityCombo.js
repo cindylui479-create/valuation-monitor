@@ -72,6 +72,10 @@ export default function EntityCombo({ value, onChange, types, placeholder }) {
                             }, onMouseEnter: (e) => (e.currentTarget.style.background = "#f9fafb"), onMouseLeave: (e) => (e.currentTarget.style.background = "white"), children: [_jsx("span", { style: {
                                         fontSize: 10, padding: "1px 5px",
                                         background: c.bg, color: c.fg, borderRadius: 3, minWidth: 28, textAlign: "center",
-                                    }, children: TYPE_LABEL[h.entity_type] }), _jsx("strong", { style: { minWidth: 100 }, children: h.code }), _jsx("span", { style: { flex: 1 }, children: h.name }), h.extra && (_jsx("span", { style: { fontSize: 11, color: "#9ca3af" }, children: h.extra }))] }, `${h.entity_type}-${h.code}`));
+                                    }, children: TYPE_LABEL[h.entity_type] }), _jsx("strong", { style: { minWidth: 100 }, children: h.code }), _jsx("span", { style: { flex: 1 }, children: h.name }), h.in_local && (_jsx("span", { title: "\u5DF2\u5728\u672C\u5730\u8DDF\u8E2A\u5E93", style: {
+                                        fontSize: 9, padding: "1px 4px",
+                                        background: "#dcfce7", color: "#166534",
+                                        borderRadius: 2,
+                                    }, children: "\u2713 \u5DF2\u8DDF\u8E2A" })), h.extra && (_jsx("span", { style: { fontSize: 11, color: "#9ca3af" }, children: h.extra }))] }, `${h.entity_type}-${h.code}`));
                     })] }))] }));
 }

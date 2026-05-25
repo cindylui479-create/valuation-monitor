@@ -35,10 +35,11 @@ def _get_pro():
         raise FetchFailure("TUSHARE_TOKEN not set")
     ts = _import_ts()
     ts.set_token(token)
+    from app.utils.tushare_meter import wrap_pro
     try:
-        return ts.pro_api(timeout=180)
+        return wrap_pro(ts.pro_api(timeout=180))
     except TypeError:
-        return ts.pro_api()
+        return wrap_pro(ts.pro_api())
 
 
 def _normalize_ts_code(code: str) -> str:

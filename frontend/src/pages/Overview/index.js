@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import { fetchOverview } from "@/api/overview";
 import { usePeSource } from "@/hooks/usePeSource";
 import MarketColumn from "./MarketColumn";
+import TodayDigest from "./TodayDigest";
 const FILTER_LABEL = {
     all: "全部",
     extreme_low: "极度低估",
@@ -54,5 +55,5 @@ alembic upgrade head
 python -m scripts.seed_universe
 python -m scripts.init_history --market A --years 10` })] }));
     }
-    return (_jsxs("div", { className: "overview", children: [_jsxs("div", { className: "overview-header", children: [_jsxs("div", { className: "as-of", children: [data.as_of ? `数据日期：${data.as_of}` : "暂无数据", isFetching && _jsx("span", { className: "dot", children: " \u5237\u65B0\u4E2D\u2026" })] }), _jsxs("div", { className: "view-toggle", children: [_jsx("button", { className: view === "heatmap" ? "active" : "", onClick: () => setView("heatmap"), children: "\u70ED\u529B\u56FE" }), _jsx("button", { className: view === "table" ? "active" : "", onClick: () => setView("table"), children: "\u8868\u683C" })] })] }), _jsx("div", { className: "tier-filter", children: Object.keys(FILTER_LABEL).map((f) => (_jsx("button", { className: "chip" + (filter === f ? " active" : ""), onClick: () => setFilter(f), children: FILTER_LABEL[f] }, f))) }), _jsx("div", { className: "market-grid", children: filteredMarkets.map((m) => (_jsx(MarketColumn, { market: m, view: view }, m.market))) })] }));
+    return (_jsxs("div", { className: "overview", children: [_jsx(TodayDigest, {}), _jsxs("div", { className: "overview-header", children: [_jsxs("div", { className: "as-of", children: [data.as_of ? `数据日期：${data.as_of}` : "暂无数据", isFetching && _jsx("span", { className: "dot", children: " \u5237\u65B0\u4E2D\u2026" })] }), _jsxs("div", { className: "view-toggle", children: [_jsx("button", { className: view === "heatmap" ? "active" : "", onClick: () => setView("heatmap"), children: "\u70ED\u529B\u56FE" }), _jsx("button", { className: view === "table" ? "active" : "", onClick: () => setView("table"), children: "\u8868\u683C" })] })] }), _jsx("div", { className: "tier-filter", children: Object.keys(FILTER_LABEL).map((f) => (_jsx("button", { className: "chip" + (filter === f ? " active" : ""), onClick: () => setFilter(f), children: FILTER_LABEL[f] }, f))) }), _jsx("div", { className: "market-grid", children: filteredMarkets.map((m) => (_jsx(MarketColumn, { market: m, view: view }, m.market))) })] }));
 }

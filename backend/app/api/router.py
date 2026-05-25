@@ -8,7 +8,12 @@ from app.api import (
     funds,
     health,
     holdings,
+    opportunities,
+    rebalance,
     search,
+    temperature_effectiveness,
+    tier_transitions,
+    tushare_usage,
     index_detail,
     indices,
     overrides,
@@ -40,3 +45,8 @@ api_router.include_router(stocks.router, tags=["stocks"])
 api_router.include_router(funds.router, tags=["funds"])
 api_router.include_router(holdings.router, tags=["holdings"])
 api_router.include_router(search.router, tags=["search"])
+api_router.include_router(tier_transitions.router, tags=["transitions"])
+api_router.include_router(opportunities.router, tags=["opportunities"])
+api_router.include_router(temperature_effectiveness.router, tags=["effectiveness"])
+api_router.include_router(tushare_usage.router, tags=["tushare"])
+api_router.include_router(rebalance.router, tags=["holdings"])

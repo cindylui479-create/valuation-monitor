@@ -39,11 +39,11 @@ def _get_pro():
     ts = _import_ts()
     ts.set_token(token)
     # Tushare 默认 timeout 30s 在弱网/拉 10y 时不够；放宽到 180s
+    from app.utils.tushare_meter import wrap_pro
     try:
-        return ts.pro_api(timeout=180)
+        return wrap_pro(ts.pro_api(timeout=180))
     except TypeError:
-        # 旧版 tushare 不支持 timeout 参数，回退
-        return ts.pro_api()
+        return wrap_pro(ts.pro_api())
 
 
 class TushareAdapter(DataSourceAdapter):

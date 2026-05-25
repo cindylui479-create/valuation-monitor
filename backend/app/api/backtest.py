@@ -59,6 +59,8 @@ def run(body: BacktestRequest, session: Session = Depends(db_session)) -> Backte
 
     val_rows = valuation_repo.series(session, idx.id, window=body.window)
     percentiles = {v.date: v.pe_percentile for v in val_rows if v.pe_percentile is not None}
+    # SRS v1.3.0 B：温度时序（用于 by_temperature 策略；可能含 price_fallback）
+    temperatures = {v.date: v.temperature for v in val_rows if v.temperature is not None}
     if not percentiles:
         raise BusinessRuleViolation(
             "该指数无 PE 分位历史数据，不能回测（港美股暂未累积满 1 年）",
@@ -95,6 +97,7 @@ def run(body: BacktestRequest, session: Session = Depends(db_session)) -> Backte
         dividend_yields=div_yields,
         include_dca=body.include_dca,
         dca_boundaries=dca_boundaries,
+        temperatures=temperatures,
     )
 
     return BacktestResponse(
@@ -110,4 +113,5 @@ def run(body: BacktestRequest, session: Session = Depends(db_session)) -> Backte
         threshold=_strategy_dto(result.threshold),
         dca=_strategy_dto(result.dca) if result.dca else None,
         buy_hold=_strategy_dto(result.buy_hold),
+        by_temperature=_strategy_dto(result.by_temperature) if result.by_temperature else None,
     )

@@ -13,7 +13,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.deps import db_session
-from app.models import Fund, IndexMeta, Market, Stock
+from app.models import Fund, IndexMeta, Market, SecurityCatalog, Stock
 
 router = APIRouter()
 
@@ -23,7 +23,8 @@ class SearchHit(BaseModel):
     code: str
     name: str
     market: str | None
-    extra: str | None = None  # 行业、类型等附加信息
+    extra: str | None = None
+    in_local: bool = False  # 是否已在本地跟踪库（自选过 / 内置 ETF）
 
 
 class SearchResponse(BaseModel):
@@ -58,7 +59,7 @@ def search(
             items.append(SearchHit(
                 entity_type="INDEX", code=idx.code, name=idx.name,
                 market=market_by_id.get(idx.market_id),
-                extra=idx.category,
+                extra=idx.category, in_local=True,
             ))
 
     # STOCK（仅自选）
@@ -76,7 +77,7 @@ def search(
             items.append(SearchHit(
                 entity_type="STOCK", code=s.code, name=s.name,
                 market=market_by_id.get(s.market_id),
-                extra=s.industry_raw,
+                extra=s.industry_raw, in_local=True,
             ))
 
     # FUND
@@ -97,7 +98,35 @@ def search(
             items.append(SearchHit(
                 entity_type="FUND", code=f.code, name=f.name,
                 market=market_by_id.get(f.market_id),
-                extra=extra,
+                extra=extra, in_local=True,
             ))
+
+    # SRS v1.3.0 K：补充 catalog（全 A 股 + 全基金）— 排除已在 items 里的 code
+    seen_codes = {(it.entity_type, it.code) for it in items}
+    remaining = limit - len(items)
+    if remaining > 0:
+        for entity_type in ("STOCK", "FUND"):
+            if entity_type not in type_set or remaining <= 0:
+                continue
+            cat_rows = list(session.scalars(
+                select(SecurityCatalog)
+                .where(SecurityCatalog.entity_type == entity_type)
+                .where(or_(
+                    SecurityCatalog.code.ilike(f"{q_lower}%"),
+                    SecurityCatalog.name.like(f"%{q}%"),
+                ))
+                .order_by(SecurityCatalog.code)
+                .limit(remaining * 2)
+            ))
+            for r in cat_rows:
+                if remaining <= 0:
+                    break
+                if (entity_type, r.code) in seen_codes:
+                    continue
+                items.append(SearchHit(
+                    entity_type=entity_type, code=r.code, name=r.name,
+                    market=r.market, extra=r.extra, in_local=False,
+                ))
+                remaining -= 1
 
     return SearchResponse(items=items[:limit])

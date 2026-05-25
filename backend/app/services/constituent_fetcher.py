@@ -34,7 +34,8 @@ def _get_pro():
     except ImportError as e:
         raise FetchFailure(f"tushare not installed: {e}") from e
     ts.set_token(token)
-    return ts.pro_api(timeout=180)
+    from app.utils.tushare_meter import wrap_pro
+    return wrap_pro(ts.pro_api(timeout=180))
 
 
 def _normalize_ts_code(code: str) -> str:

@@ -36,6 +36,13 @@ export interface StockValuationPoint {
   tier: string | null;
 }
 
+export interface AnchorComparison {
+  anchor: string;
+  temperature: string | null;
+  tier: string | null;
+  available: boolean;
+}
+
 export interface StockDetail {
   code: string;
   name: string;
@@ -49,6 +56,8 @@ export interface StockDetail {
   latest_valuation: StockValuationPoint | null;
   quotes: QuotePoint[];
   valuation_series: StockValuationPoint[];
+  anchor_comparisons: AnchorComparison[];
+  industry_default_anchor: string | null;
 }
 
 export function listStocks(): Promise<{ items: StockSummary[] }> {

@@ -3,6 +3,7 @@ import { useState, useMemo } from "react";
 import { fetchOverview } from "@/api/overview";
 import { usePeSource } from "@/hooks/usePeSource";
 import MarketColumn from "./MarketColumn";
+import TodayDigest from "./TodayDigest";
 import type { OverviewMarket } from "@/types/api";
 
 type ViewMode = "heatmap" | "table";
@@ -77,6 +78,8 @@ python -m scripts.init_history --market A --years 10`}
 
   return (
     <div className="overview">
+      <TodayDigest />
+
       <div className="overview-header">
         <div className="as-of">
           {data.as_of ? `数据日期：${data.as_of}` : "暂无数据"}

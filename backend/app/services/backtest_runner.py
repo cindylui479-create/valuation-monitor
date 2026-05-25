@@ -59,6 +59,8 @@ class BacktestResult:
     threshold: StrategyResult
     dca: StrategyResult | None
     buy_hold: StrategyResult
+    # SRS v1.3.0 B：按温度档位调仓策略
+    by_temperature: StrategyResult | None = None
 
 
 # ---------- 工具 ----------
@@ -207,6 +209,72 @@ def _run_dca(
     return _finalize("dca", nav, trades)
 
 
+def _run_by_temperature(
+    quotes, temperatures, fee, slip, div_yields, reinvest_div,
+) -> StrategyResult:
+    """SRS v1.3.0 B：按温度档位调仓策略。
+
+    规则（与 SRS D1 默认档位对齐）：
+      温度 ≤ 30  → 满仓 100%
+      30 < 温度 < 70 → 持有当前仓位（不主动调）
+      70 ≤ 温度 < 90 → 仓位调到 50%
+      温度 ≥ 90 → 清仓 0%
+
+    实现：每个交易日检查当日温度，若目标仓位 != 当前仓位，按 close 调仓。
+    """
+    cash = Decimal(1)
+    shares = Decimal(0)
+    trades: list[Trade] = []
+    nav: list[NAVPoint] = []
+    prev_d: date | None = None
+
+    def _target_ratio(temp: Decimal) -> Decimal:
+        if temp <= Decimal(30):
+            return Decimal(1)
+        if temp < Decimal(70):
+            return Decimal("-1")  # 信号：持有不动
+        if temp < Decimal(90):
+            return Decimal("0.5")
+        return Decimal(0)
+
+    for d, close in quotes:
+        if close <= 0:
+            continue
+        cur_d = date.fromisoformat(d)
+        if reinvest_div and shares > 0 and prev_d is not None:
+            shares += _reinvest_dividend(shares, close, div_yields.get(d), (cur_d - prev_d).days)
+        total = cash + shares * close
+        nav.append(NAVPoint(date=d, nav=total))
+        prev_d = cur_d
+        temp = temperatures.get(d)
+        if temp is None or total <= 0:
+            continue
+        target = _target_ratio(temp)
+        if target < 0:  # 信号：保持当前仓位
+            continue
+        target_share_value = total * target
+        current_share_value = shares * close
+        diff = target_share_value - current_share_value
+        if abs(diff) < total * Decimal("0.02"):
+            # 差异小于 2% 不调（避免频繁交易）
+            continue
+        if diff > 0:
+            # 加仓：用 cash 买
+            buy_cash = min(cash, diff)
+            new_shares, _ = _apply_buy_cost(buy_cash, close, fee, slip)
+            shares += new_shares
+            cash -= buy_cash
+            trades.append(Trade(d, "BUY", close, None, amount=buy_cash))
+        else:
+            # 减仓：卖部分 shares
+            sell_shares = min(shares, abs(diff) / close)
+            new_cash, _ = _apply_sell_cost(sell_shares, close, fee, slip)
+            shares -= sell_shares
+            cash += new_cash
+            trades.append(Trade(d, "SELL", close, None, amount=new_cash))
+    return _finalize("by_temperature", nav, trades)
+
+
 def _finalize(name: str, nav: list[NAVPoint], trades: list[Trade]) -> StrategyResult:
     final = nav[-1].nav if nav else Decimal(1)
     return StrategyResult(
@@ -234,6 +302,7 @@ def run_backtest(
     dividend_yields: dict[str, Decimal] | None = None,
     include_dca: bool = True,
     dca_boundaries: dict[str, Decimal] | None = None,
+    temperatures: dict[str, Decimal] | None = None,
 ) -> BacktestResult:
     div_yields = dividend_yields or {}
     in_range = [(d, c) for d, c in quotes if start <= d <= end]
@@ -244,6 +313,11 @@ def run_backtest(
         _run_dca(in_range, percentiles, dca_boundaries, fee_rate, slippage_rate,
                  div_yields, reinvest_dividend)
         if include_dca else None
+    )
+    by_temp = (
+        _run_by_temperature(in_range, temperatures, fee_rate, slippage_rate,
+                            div_yields, reinvest_dividend)
+        if temperatures else None
     )
     return BacktestResult(
         index_code=index_code,
@@ -257,6 +331,7 @@ def run_backtest(
         threshold=th,
         dca=dca,
         buy_hold=bh,
+        by_temperature=by_temp,
     )
 
 

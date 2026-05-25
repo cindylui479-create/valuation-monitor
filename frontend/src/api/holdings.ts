@@ -11,6 +11,9 @@ export interface HoldingItem {
   quantity: string | null;
   latest_price: string | null;
   input_mode: "value" | "quantity";
+  cost_basis: string | null;
+  unrealized_pnl: string | null;
+  pnl_pct: string | null;
   weight_pct: string | null;
   temperature: string | null;
   tier: string | null;
@@ -28,6 +31,9 @@ export interface PortfolioSummary {
   valued_value: string;
   coverage_pct: string;
   tier_distribution: Record<string, string>;
+  total_cost_basis: string;
+  total_unrealized_pnl: string;
+  total_pnl_pct: string | null;
   items: HoldingItem[];
 }
 
@@ -40,6 +46,7 @@ export function addHolding(body: {
   entity_code: string;
   market_value?: number;
   quantity?: number;
+  cost_basis?: number;
   note?: string;
 }): Promise<HoldingItem> {
   return apiPost<HoldingItem>("/holdings", body);
@@ -47,7 +54,7 @@ export function addHolding(body: {
 
 export function updateHolding(
   id: number,
-  body: { market_value?: number; quantity?: number; note?: string },
+  body: { market_value?: number; quantity?: number; cost_basis?: number; note?: string },
 ): Promise<HoldingItem> {
   return apiPatch<HoldingItem>(`/holdings/${id}`, body);
 }

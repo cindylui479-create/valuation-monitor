@@ -114,6 +114,13 @@ export default function EntityCombo({ value, onChange, types, placeholder }: Pro
                 }}>{TYPE_LABEL[h.entity_type]}</span>
                 <strong style={{ minWidth: 100 }}>{h.code}</strong>
                 <span style={{ flex: 1 }}>{h.name}</span>
+                {h.in_local && (
+                  <span title="已在本地跟踪库" style={{
+                    fontSize: 9, padding: "1px 4px",
+                    background: "#dcfce7", color: "#166534",
+                    borderRadius: 2,
+                  }}>✓ 已跟踪</span>
+                )}
                 {h.extra && (
                   <span style={{ fontSize: 11, color: "#9ca3af" }}>{h.extra}</span>
                 )}

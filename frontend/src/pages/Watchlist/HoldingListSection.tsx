@@ -10,6 +10,7 @@ import {
 } from "@/api/holdings";
 import type { SearchHit } from "@/api/search";
 import EntityCombo from "@/components/EntityCombo";
+import RebalancePanel from "./RebalancePanel";
 import {
   isPriceFallback,
   temperatureColor,
@@ -41,7 +42,8 @@ export default function HoldingListSection() {
   const qc = useQueryClient();
   const [selected, setSelected] = useState<SearchHit | null>(null);
   const [mode, setMode] = useState<Mode>("value");
-  const [amount, setAmount] = useState("");          // 数字（金额或数量）
+  const [amount, setAmount] = useState("");
+  const [costBasis, setCostBasis] = useState("");    // SRS v1.3.0 A：可选成本
   const [note, setNote] = useState("");
   const [err, setErr] = useState<string | null>(null);
 
@@ -60,17 +62,20 @@ export default function HoldingListSection() {
       if (!selected) throw new Error("请先选择标的");
       const n = parseFloat(amount);
       if (!Number.isFinite(n) || n <= 0) throw new Error("数值必须 > 0");
+      const cb = parseFloat(costBasis);
       return addHolding({
         entity_type: selected.entity_type,
         entity_code: selected.code,
         market_value: mode === "value" ? n : undefined,
         quantity: mode === "quantity" ? n : undefined,
+        cost_basis: Number.isFinite(cb) && cb > 0 ? cb : undefined,
         note: note.trim() || undefined,
       });
     },
     onSuccess: () => {
       setSelected(null);
       setAmount("");
+      setCostBasis("");
       setNote("");
       setErr(null);
       qc.invalidateQueries({ queryKey: ["portfolio"] });
@@ -106,6 +111,12 @@ export default function HoldingListSection() {
   const total = parseFloat(data.total_value);
   const weightedTemp = data.weighted_temperature ? parseFloat(data.weighted_temperature) : null;
   const coverage = parseFloat(data.coverage_pct);
+  const totalCost = parseFloat(data.total_cost_basis);
+  const totalPnl = parseFloat(data.total_unrealized_pnl);
+  const totalPnlPct = data.total_pnl_pct ? parseFloat(data.total_pnl_pct) : null;
+  const hasCostData = totalCost > 0;
+  // A 股惯例：红涨绿跌
+  const pnlColor = (v: number) => (v > 0 ? "#dc2626" : v < 0 ? "#15803d" : "#6b7280");
 
   return (
     <div>
@@ -135,6 +146,28 @@ export default function HoldingListSection() {
           <div className="label">持仓项</div>
           <div className="value">{data.items.length}</div>
         </div>
+        {hasCostData && (
+          <>
+            <div className="stat">
+              <div className="label">总成本</div>
+              <div className="value">¥{totalCost.toLocaleString("zh-CN", { maximumFractionDigits: 0 })}</div>
+            </div>
+            <div className="stat">
+              <div className="label">未实现盈亏</div>
+              <div className="value" style={{ color: pnlColor(totalPnl) }}>
+                {totalPnl > 0 ? "+" : ""}¥{totalPnl.toLocaleString("zh-CN", { maximumFractionDigits: 0 })}
+              </div>
+            </div>
+            {totalPnlPct != null && (
+              <div className="stat">
+                <div className="label">盈亏比例</div>
+                <div className="value" style={{ color: pnlColor(totalPnlPct) }}>
+                  {totalPnlPct > 0 ? "+" : ""}{totalPnlPct.toFixed(2)}%
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </section>
 
       {/* 档位分布 */}
@@ -165,6 +198,11 @@ export default function HoldingListSection() {
             })}
           </div>
         </section>
+      )}
+
+      {/* 再平衡建议 */}
+      {data.items.length > 0 && (
+        <RebalancePanel currentTemp={weightedTemp} />
       )}
 
       {/* 添加持仓 */}
@@ -206,10 +244,19 @@ export default function HoldingListSection() {
           />
 
           <input
+            placeholder="成本（¥，可选，用于盈亏）"
+            type="number"
+            value={costBasis}
+            onChange={(e) => setCostBasis(e.target.value)}
+            style={{ width: 180, padding: "4px 8px" }}
+            title="录入持仓的总成本（人民币）。后续按当前市值算未实现盈亏。"
+          />
+
+          <input
             placeholder="备注（可选）"
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            style={{ width: 160, padding: "4px 8px" }}
+            style={{ width: 140, padding: "4px 8px" }}
           />
           <button
             className="btn btn-primary"
@@ -241,6 +288,8 @@ export default function HoldingListSection() {
                 <th>名称</th>
                 <th>录入</th>
                 <th>市值（¥）</th>
+                <th>成本（¥）</th>
+                <th>盈亏</th>
                 <th>权重</th>
                 <th>温度</th>
                 <th>档位</th>
@@ -303,6 +352,28 @@ export default function HoldingListSection() {
                       ) : (
                         parseFloat(h.market_value).toLocaleString("zh-CN", { maximumFractionDigits: 0 })
                       )}
+                    </td>
+                    <td style={{ fontSize: 12, color: "#6b7280" }}>
+                      {h.cost_basis
+                        ? parseFloat(h.cost_basis).toLocaleString("zh-CN", { maximumFractionDigits: 0 })
+                        : "—"}
+                    </td>
+                    <td style={{ fontSize: 12 }}>
+                      {(() => {
+                        if (!h.unrealized_pnl) return "—";
+                        const pnl = parseFloat(h.unrealized_pnl);
+                        const pct = h.pnl_pct ? parseFloat(h.pnl_pct) : null;
+                        return (
+                          <span style={{ color: pnlColor(pnl) }}>
+                            {pnl > 0 ? "+" : ""}{pnl.toLocaleString("zh-CN", { maximumFractionDigits: 0 })}
+                            {pct != null && (
+                              <span style={{ marginLeft: 4 }}>
+                                ({pct > 0 ? "+" : ""}{pct.toFixed(1)}%)
+                              </span>
+                            )}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td>{h.weight_pct ? h.weight_pct + "%" : "—"}</td>
                     <td>
