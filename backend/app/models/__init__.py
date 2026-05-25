@@ -2,6 +2,7 @@ from app.models.audit import DataAudit
 from app.models.base import Base
 from app.models.data_anomaly import DataAnomaly
 from app.models.fund_nav import FundNAV, FundValuation
+from app.models.index_constituent import IndexConstituent, IndexConstituentQuote
 from app.models.dca import DCAExecution, DCAPlan
 from app.models.index import Fund, IndexMeta
 from app.models.market import Market, TradingCalendar
@@ -35,4 +36,6 @@ __all__ = [
     "StockOverride",
     "FundNAV",
     "FundValuation",
+    "IndexConstituent",
+    "IndexConstituentQuote",
 ]

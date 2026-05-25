@@ -7,6 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, timedelta
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.adapters import get_registry
@@ -68,6 +69,16 @@ def run_for_market(session: Session, market: str, target_date: date | None = Non
 
     session.commit()
 
+    # SRS v1.1.0 方案 A：A 市场 3 只指数走成分股聚合 PE
+    if market == "A":
+        try:
+            n_set = _augment_constituent_pe(session, start, target)
+            session.commit()
+            log.info("pipeline.constituent_pe_augmented", market=market, set=n_set)
+        except Exception as e:
+            errors.append(f"constituent_pe {market}: {e}")
+            log.error("pipeline.constituent_pe_failed", market=market, error=str(e)[:200])
+
     # SRS R10：双口径 — Tushare 覆盖的 A 股指数额外拉一次 CSI 数据填 pe_ttm_csi/pb_csi
     if market == "A":
         try:
@@ -77,6 +88,16 @@ def run_for_market(session: Session, market: str, target_date: date | None = Non
         except Exception as e:
             errors.append(f"csi augment: {e}")
             log.error("pipeline.csi_augment_failed", error=str(e)[:200])
+
+    # SRS v1.1.0 方案 B：US 市场每日拉一次 multpl S&P 500 PE，forward-fill 到 SPY 当月 quotes
+    if market == "US":
+        try:
+            n_set = _augment_multpl_spy(session)
+            session.commit()
+            log.info("pipeline.multpl_augmented", market=market, set=n_set)
+        except Exception as e:
+            errors.append(f"multpl {market}: {e}")
+            log.error("pipeline.multpl_failed", market=market, error=str(e)[:200])
 
     # 重算最近 30 个交易日的派生分位（两个口径都算）
     dates_to_recompute = _recent_dates(target, LOOKBACK_DAYS)
@@ -247,6 +268,111 @@ TUSHARE_CSI_COVERED = {
     "000300.SH", "000905.SH", "000016.SH",
     "000001.SH", "399001.SZ", "399006.SZ",
 }
+
+
+CONSTITUENT_PE_INDICES = ("000932.SH", "H30269.CSI", "000688.SH")
+
+
+def _augment_constituent_pe(session, start: date, end: date) -> int:
+    """SRS v1.1.0 方案 A：每日批处理 — 对 3 只指数同步成分股权重 + quotes，
+    并对最近 30 天重算成分股聚合 PE → 写 index_quote.pe_ttm。
+
+    Tushare 调用密集；只在 A 调度内跑一次。返回更新的 index_quote 行数。
+    """
+    from app.repositories import constituent_repo, index_repo
+    from app.services import constituent_fetcher, constituent_pe_service
+
+    n_total = 0
+    for code in CONSTITUENT_PE_INDICES:
+        idx = index_repo.get_by_code(session, code)
+        if idx is None:
+            continue
+        try:
+            # 1) 拉最近 60 天的月度权重（保证当月调样能跟上）
+            constituent_fetcher.fetch_index_weights(
+                session, idx.id, code,
+                start=end - timedelta(days=60), end=end,
+            )
+            session.commit()
+
+            # 2) 拉成分股近 30 天 daily_basic（增量；已有不跳过 — pe 每日变）
+            stock_codes = constituent_repo.list_distinct_stock_codes(session, idx.id)
+            constituent_fetcher.fetch_constituent_quotes(
+                session, stock_codes,
+                start=end - timedelta(days=30), end=end,
+                skip_existing=False,
+            )
+            session.commit()
+
+            # 3) 重算最近 30 天聚合 PE
+            n = constituent_pe_service.backfill_index_pe(
+                session, idx,
+                start=(end - timedelta(days=30)).isoformat(),
+                end=end.isoformat(),
+            )
+            n_total += n
+            session.commit()
+        except Exception as e:
+            log.warning("constituent_pe.daily_fail", code=code, error=str(e)[:200])
+    return n_total
+
+
+def _augment_multpl_spy(session) -> int:
+    """SRS v1.1.0 方案 B：拉 multpl S&P 500 PE-TTM 月度数据，
+    forward-fill 到 SPY 的近 60 天 index_quote.pe_ttm（覆盖月初 + 当月所有交易日）。
+
+    幂等：值未变时不更新；返回实际更新的行数。
+    """
+    import bisect
+    from decimal import Decimal
+
+    from app.adapters.multpl_adapter import MultplAdapter
+    from app.models import IndexMeta, IndexQuote
+
+    idx = session.scalar(select(IndexMeta).where(IndexMeta.code == "SPY"))
+    if idx is None:
+        return 0
+
+    adapter = MultplAdapter()
+    try:
+        points = list(adapter.fetch_history("s-p-500-pe-ratio"))
+    except Exception as e:
+        log.warning("multpl.fetch_failed", error=str(e)[:200])
+        return 0
+    if not points:
+        return 0
+
+    monthly = sorted([(date.fromisoformat(p.date), p.value) for p in points])
+    m_dates = [d for d, _ in monthly]
+    m_vals = [v for _, v in monthly]
+
+    def lookup(d_: date) -> Decimal | None:
+        i = bisect.bisect_right(m_dates, d_) - 1
+        return m_vals[i] if i >= 0 else None
+
+    # 只更近 60 天（每日增量场景；首次 backfill 走 scripts/backfill_multpl_spy.py）
+    end = date.today()
+    start = end - timedelta(days=60)
+    n_set = 0
+    quotes = list(session.scalars(
+        select(IndexQuote)
+        .where(IndexQuote.index_id == idx.id)
+        .where(IndexQuote.date >= start.isoformat())
+        .where(IndexQuote.date <= end.isoformat())
+    ))
+    for q in quotes:
+        pe = lookup(date.fromisoformat(q.date))
+        if pe is None:
+            continue
+        if q.pe_ttm is not None and abs(Decimal(str(q.pe_ttm)) - pe) < Decimal("0.001"):
+            continue
+        q.pe_ttm = pe
+        if not q.source:
+            q.source = "multpl"
+        elif "multpl" not in q.source:
+            q.source = f"{q.source}+multpl"
+        n_set += 1
+    return n_set
 
 
 def _augment_csi(session, indices, start: date, end: date) -> int:
