@@ -5,11 +5,13 @@ const STRATEGY_LABEL = {
     threshold: "阈值策略",
     dca: "定投策略",
     buy_hold: "买入持有（基准）",
+    by_temperature: "按温度调仓",
 };
 const STRATEGY_COLOR = {
     threshold: "#2563eb",
     dca: "#f59e0b",
     buy_hold: "#6b7280",
+    by_temperature: "#a855f7",
 };
 export default function NAVChart({ strategies }) {
     const option = useMemo(() => {
