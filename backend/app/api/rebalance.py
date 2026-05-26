@@ -1,19 +1,18 @@
-"""SRS v1.3.0 I：再平衡建议（贪心算法）。
+"""SRS v1.3.1 I-fix：再平衡建议（纯逆向模式，"低买高卖"）。
 
-输入：当前持仓 + 目标加权温度
-输出：建议的"增加/减少哪些持仓多少元"清单
+逻辑（不再求"组合温度 = X"，机械求解会反直觉）：
+  1. 把当前持仓按温度分三桶：
+     HIGH 高估 (温度 > 70)
+     LOW  低估 (温度 < 30)
+     MID  合理 (30 ≤ 温度 ≤ 70)
+  2. 对每个 HIGH 持仓减仓 reduce_pct（默认 30%）
+  3. 释放的资金按现有 LOW 桶各持仓的 mv 比例加仓
+  4. MID 桶保持不变
+  5. 输出"组合温度 X → Y"作为效果摘要
 
-策略（贪心）：
-- 若 target < current：需降温 → 减仓温度高于 target 的标的 + 加仓温度低于 target 的标的
-- 若 target > current：需升温 → 反之
-
-算法（简化）：
-1. 把持仓按温度排序
-2. 若降温，从温度最高的开始等比例减仓，加到温度最低的标的；每轮算新组合温度
-3. 满足 |new_temp - target| < tolerance 时停止
-4. 若不可达（如所有持仓温度都比 target 高，且无空标的池），返回最优可达点
-
-为避免复杂，本 MVP 只在现有持仓内做权重再分配（不引入新标的）。
+边界：
+- 无 HIGH 持仓：组合已无可减仓的高估标的；不动
+- 无 LOW 持仓：组合无低估标的可加仓；建议持现金或人工挑标的
 """
 from __future__ import annotations
 
@@ -32,9 +31,14 @@ from app.utils.decimal_utils import decimal_to_str
 router = APIRouter()
 
 
+# 默认档位（与 SRS D1 对齐）
+HIGH_THRESHOLD = Decimal(70)
+LOW_THRESHOLD = Decimal(30)
+
+
 class RebalanceSuggestRequest(BaseModel):
-    target_temperature: float = Field(..., ge=0, le=100)
-    tolerance: float = Field(default=2.0, ge=0.1, le=10)
+    reduce_pct: float = Field(default=0.30, ge=0.05, le=0.95,
+                              description="对每个高估持仓减仓的比例（0.30 = 减仓 30%）")
 
 
 class HoldingAdjustment(BaseModel):
@@ -43,23 +47,28 @@ class HoldingAdjustment(BaseModel):
     entity_name: str
     current_mv: str
     current_temp: str
+    tier: str | None
     suggested_mv: str
-    delta_mv: str               # 正数 = 加仓；负数 = 减仓
-    direction: str              # 'ADD' / 'REDUCE' / 'HOLD'
+    delta_mv: str           # 正数 = 加仓；负数 = 减仓
+    direction: str          # 'ADD' / 'REDUCE' / 'HOLD'
+    bucket: str             # HIGH / LOW / MID
 
 
 class RebalanceSuggestResponse(BaseModel):
     feasible: bool
+    reduce_pct: str
     current_temp: str | None
-    target_temp: str
     projected_temp: str | None
     total_mv: str
+    total_released: str      # 高估桶减仓总额（= 低估桶加仓总额）
+    n_high: int
+    n_low: int
+    n_mid: int
     adjustments: list[HoldingAdjustment]
     notes: list[str]
 
 
 def _weighted_temp(items: list[tuple[Decimal, Decimal]]) -> Decimal | None:
-    """[(mv, temp), ...] → 加权平均温度。"""
     total = sum(mv for mv, _ in items)
     if total == 0:
         return None
@@ -75,165 +84,138 @@ def rebalance_suggest(
     if not holdings:
         raise HTTPException(400, "无持仓数据")
 
-    # 解析每条持仓：拿 mv + temp + name
     rows: list[dict] = []
     total_mv = Decimal(0)
     for h in holdings:
         info = _resolve_entity(session, h.entity_type, h.entity_code)
         if info["temperature"] is None:
-            continue  # 无温度的持仓不参与再平衡
+            continue
         mv = _effective_market_value(h, info)
         rows.append({
             "h": h,
             "name": info["name"] or h.entity_code,
             "mv": mv,
             "temp": Decimal(info["temperature"]),
+            "tier": info["tier"],
         })
         total_mv += mv
 
     if not rows:
-        raise HTTPException(400, "所有持仓均无温度数据，无法再平衡")
+        raise HTTPException(400, "所有持仓均无温度数据")
 
-    target = Decimal(str(body.target_temperature))
-    tol = Decimal(str(body.tolerance))
-
+    reduce_pct = Decimal(str(body.reduce_pct))
     cur_temp = _weighted_temp([(r["mv"], r["temp"]) for r in rows])
     notes: list[str] = []
 
-    if cur_temp is None:
-        raise HTTPException(400, "当前组合温度无法计算")
+    # 分三桶
+    high = [r for r in rows if r["temp"] > HIGH_THRESHOLD]
+    low = [r for r in rows if r["temp"] < LOW_THRESHOLD]
+    mid = [r for r in rows if LOW_THRESHOLD <= r["temp"] <= HIGH_THRESHOLD]
 
-    # 如果已在容差内，无需调整
-    if abs(cur_temp - target) <= tol:
-        notes.append(f"组合温度 {float(cur_temp):.1f} 已在目标 {float(target):.1f}±{float(tol)} 范围内")
-        return RebalanceSuggestResponse(
-            feasible=True,
-            current_temp=decimal_to_str(cur_temp),
-            target_temp=decimal_to_str(target),
-            projected_temp=decimal_to_str(cur_temp),
-            total_mv=decimal_to_str(total_mv) or "0",
-            adjustments=[],
-            notes=notes,
-        )
-
-    # 把每条按温度排序：升温时把"温度低的"加权重；降温时把"温度高的"减权重
-    rows_sorted = sorted(rows, key=lambda r: r["temp"])
-    low_temp = rows_sorted[0]["temp"]
-    high_temp = rows_sorted[-1]["temp"]
-    if target < low_temp - tol:
-        notes.append(f"目标温度 {float(target):.1f} 低于持仓里最低温度 {float(low_temp):.1f}，"
-                     f"仅靠现有持仓不可达。")
-        return RebalanceSuggestResponse(
-            feasible=False, current_temp=decimal_to_str(cur_temp),
-            target_temp=decimal_to_str(target),
-            projected_temp=decimal_to_str(low_temp),
-            total_mv=decimal_to_str(total_mv) or "0",
-            adjustments=[], notes=notes,
-        )
-    if target > high_temp + tol:
-        notes.append(f"目标温度 {float(target):.1f} 高于持仓里最高温度 {float(high_temp):.1f}，"
-                     f"仅靠现有持仓不可达。")
-        return RebalanceSuggestResponse(
-            feasible=False, current_temp=decimal_to_str(cur_temp),
-            target_temp=decimal_to_str(target),
-            projected_temp=decimal_to_str(high_temp),
-            total_mv=decimal_to_str(total_mv) or "0",
-            adjustments=[], notes=notes,
-        )
-
-    # 求新权重 w_i 满足 Σ w_i = 1, Σ w_i × temp_i = target
-    # 简化：双标的 mix（最低温度 + 最高温度），其余保持当前权重
-    # → 使 (1-α) × cur_other + α × (w_low × low + w_high × high) ≈ target
-    # 更简化：用线性组合：把"高于 target 的标的权重"全部均匀减少 X，
-    # 把"低于 target 的标的权重"按比例加 X。
-    # 解 X 用一次方程：
-    #   new_temp = (Σ_low (mv_i + add_i) × temp_i + Σ_high (mv_i - cut_i) × temp_i) / total_mv = target
-    # 其中 add_i / cut_i 等比例分配，Σ add = Σ cut = total_delta
-
-    # 解：
-    # Σ_low mv × temp + Σ_high mv × temp = total_mv × cur_temp
-    # 若 Σ add_i × temp_low_avg = Σ cut_i × temp_high_avg + (target - cur) × total_mv
-    # 简化用单一变量 X = total_delta：
-    #   ΔT = X × (avg_low_temp - avg_high_temp) / total_mv
-    # → target - cur = X × (avg_low_temp - avg_high_temp) / total_mv
-    # → X = (target - cur) × total_mv / (avg_low_temp - avg_high_temp)
-    lows = [r for r in rows if r["temp"] < target]
-    highs = [r for r in rows if r["temp"] > target]
-    if not lows or not highs:
-        notes.append("所有持仓温度都在目标同侧（要么全高于要么全低于目标），仅靠现有持仓不可达。")
-        return RebalanceSuggestResponse(
-            feasible=False, current_temp=decimal_to_str(cur_temp),
-            target_temp=decimal_to_str(target),
-            projected_temp=decimal_to_str(cur_temp),
-            total_mv=decimal_to_str(total_mv) or "0",
-            adjustments=[], notes=notes,
-        )
-
-    sum_low_mv = sum(r["mv"] for r in lows)
-    sum_high_mv = sum(r["mv"] for r in highs)
-    avg_low_temp = sum(r["mv"] * r["temp"] for r in lows) / sum_low_mv
-    avg_high_temp = sum(r["mv"] * r["temp"] for r in highs) / sum_high_mv
-
-    denom = avg_low_temp - avg_high_temp
-    if abs(denom) < Decimal("0.01"):
-        notes.append("低端与高端温度差距过小，无法计算调整量。")
-        return RebalanceSuggestResponse(
-            feasible=False, current_temp=decimal_to_str(cur_temp),
-            target_temp=decimal_to_str(target), projected_temp=decimal_to_str(cur_temp),
-            total_mv=decimal_to_str(total_mv) or "0",
-            adjustments=[], notes=notes,
-        )
-
-    # X = 调整量（正数表示 low 端加 X，high 端减 X）
-    x = (target - cur_temp) * total_mv / denom
-    # 不能超过 high 端总 mv（不能减仓到负）
-    if x > sum_high_mv * Decimal("0.95"):
-        x = sum_high_mv * Decimal("0.95")  # 最多减仓 95%
-        notes.append(f"为达目标需减仓超过 95%，已限制到上限。projected_temp 可能与 target 有偏差。")
-    if -x > sum_low_mv * Decimal("0.95"):
-        x = -sum_low_mv * Decimal("0.95")
-        notes.append(f"为达目标需将低端减仓超过 95%，已限制。")
-
-    # 把 X 按 mv 比例分配
+    feasible = True
     adjustments: list[HoldingAdjustment] = []
-    for r in rows:
-        if r["temp"] < target:
-            add = x * r["mv"] / sum_low_mv
-            new_mv = r["mv"] + add
-            delta = add
-        elif r["temp"] > target:
-            cut = x * r["mv"] / sum_high_mv
-            new_mv = r["mv"] - cut
-            delta = -cut
-        else:
-            new_mv = r["mv"]
-            delta = Decimal(0)
-        direction = "ADD" if delta > 1 else ("REDUCE" if delta < -1 else "HOLD")
+    total_released = Decimal(0)
+
+    if not high and not low:
+        notes.append(
+            "组合无温度 > 70 的高估持仓，也无温度 < 30 的低估持仓 — "
+            "整体温度处于合理区间，无需再平衡。"
+        )
+        feasible = False
+    elif not high:
+        notes.append("组合无温度 > 70 的高估持仓，无可减仓的资金 — 整体偏低估，建议持有。")
+        feasible = False
+    elif not low:
+        notes.append(
+            f"组合无温度 < 30 的低估持仓 — 减仓高估部分释放的 ¥{float(sum(r['mv'] for r in high) * reduce_pct):,.0f} "
+            f"建议保留为现金，等待新的低估机会。"
+        )
+        for r in high:
+            cut = r["mv"] * reduce_pct
+            adjustments.append(HoldingAdjustment(
+                entity_type=r["h"].entity_type, entity_code=r["h"].entity_code,
+                entity_name=r["name"],
+                current_mv=decimal_to_str(r["mv"]) or "0",
+                current_temp=decimal_to_str(r["temp"]) or "0",
+                tier=r["tier"],
+                suggested_mv=decimal_to_str(r["mv"] - cut) or "0",
+                delta_mv=decimal_to_str(-cut) or "0",
+                direction="REDUCE", bucket="HIGH",
+            ))
+            total_released += cut
+        feasible = True
+
+    if high and low:
+        # 减仓 HIGH
+        for r in high:
+            cut = r["mv"] * reduce_pct
+            adjustments.append(HoldingAdjustment(
+                entity_type=r["h"].entity_type, entity_code=r["h"].entity_code,
+                entity_name=r["name"],
+                current_mv=decimal_to_str(r["mv"]) or "0",
+                current_temp=decimal_to_str(r["temp"]) or "0",
+                tier=r["tier"],
+                suggested_mv=decimal_to_str(r["mv"] - cut) or "0",
+                delta_mv=decimal_to_str(-cut) or "0",
+                direction="REDUCE", bucket="HIGH",
+            ))
+            total_released += cut
+
+        # 加仓 LOW（按现有 mv 比例分配）
+        sum_low_mv = sum(r["mv"] for r in low)
+        for r in low:
+            add = (total_released * r["mv"] / sum_low_mv) if sum_low_mv > 0 else Decimal(0)
+            adjustments.append(HoldingAdjustment(
+                entity_type=r["h"].entity_type, entity_code=r["h"].entity_code,
+                entity_name=r["name"],
+                current_mv=decimal_to_str(r["mv"]) or "0",
+                current_temp=decimal_to_str(r["temp"]) or "0",
+                tier=r["tier"],
+                suggested_mv=decimal_to_str(r["mv"] + add) or "0",
+                delta_mv=decimal_to_str(add) or "0",
+                direction="ADD", bucket="LOW",
+            ))
+
+    # MID 桶：保持
+    for r in mid:
         adjustments.append(HoldingAdjustment(
-            entity_type=r["h"].entity_type,
-            entity_code=r["h"].entity_code,
+            entity_type=r["h"].entity_type, entity_code=r["h"].entity_code,
             entity_name=r["name"],
             current_mv=decimal_to_str(r["mv"]) or "0",
             current_temp=decimal_to_str(r["temp"]) or "0",
-            suggested_mv=decimal_to_str(new_mv) or "0",
-            delta_mv=decimal_to_str(delta) or "0",
-            direction=direction,
+            tier=r["tier"],
+            suggested_mv=decimal_to_str(r["mv"]) or "0",
+            delta_mv="0",
+            direction="HOLD", bucket="MID",
         ))
 
-    projected_temp = _weighted_temp([
-        (Decimal(adj.suggested_mv), Decimal(adj.current_temp))
-        for adj in adjustments
-    ])
+    # 投影温度
+    new_pairs: list[tuple[Decimal, Decimal]] = []
+    for adj in adjustments:
+        new_pairs.append((Decimal(adj.suggested_mv), Decimal(adj.current_temp)))
+    projected_temp = _weighted_temp(new_pairs)
 
-    # 排序：调整量大的在前
-    adjustments.sort(key=lambda a: -abs(float(a.delta_mv)))
+    # 排序：先减仓（按金额降序）、再加仓、再持有
+    order_map = {"REDUCE": 0, "ADD": 1, "HOLD": 2}
+    adjustments.sort(key=lambda a: (order_map[a.direction], -abs(float(a.delta_mv))))
+
+    if feasible and high and low:
+        notes.insert(0,
+            f"减仓 {len(high)} 只高估持仓（温度 > {HIGH_THRESHOLD}）各 {float(reduce_pct)*100:.0f}%，"
+            f"释放 ¥{float(total_released):,.0f}，"
+            f"按比例加仓 {len(low)} 只低估持仓（温度 < {LOW_THRESHOLD}）。"
+        )
 
     return RebalanceSuggestResponse(
-        feasible=True,
-        current_temp=decimal_to_str(cur_temp),
-        target_temp=decimal_to_str(target),
+        feasible=feasible,
+        reduce_pct=decimal_to_str(reduce_pct) or "0",
+        current_temp=decimal_to_str(cur_temp) if cur_temp else None,
         projected_temp=decimal_to_str(projected_temp) if projected_temp else None,
         total_mv=decimal_to_str(total_mv) or "0",
+        total_released=decimal_to_str(total_released) or "0",
+        n_high=len(high),
+        n_low=len(low),
+        n_mid=len(mid),
         adjustments=adjustments,
         notes=notes,
     )
