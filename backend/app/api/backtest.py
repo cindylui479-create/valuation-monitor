@@ -114,4 +114,5 @@ def run(body: BacktestRequest, session: Session = Depends(db_session)) -> Backte
         dca=_strategy_dto(result.dca) if result.dca else None,
         buy_hold=_strategy_dto(result.buy_hold),
         by_temperature=_strategy_dto(result.by_temperature) if result.by_temperature else None,
+        temperature_dca=_strategy_dto(result.temperature_dca) if result.temperature_dca else None,
     )

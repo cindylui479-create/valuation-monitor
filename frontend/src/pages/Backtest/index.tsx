@@ -11,6 +11,7 @@ const STRATEGY_LABEL: Record<string, string> = {
   dca: "定投策略",
   buy_hold: "买入持有（基准）",
   by_temperature: "按温度调仓",
+  temperature_dca: "温度反向定投",
 };
 
 function StrategyKPI({ s }: { s: StrategyResultDTO }) {
@@ -160,13 +161,17 @@ export default function Backtest() {
             {result.reinvest_dividend && " · 分红再投资"}
           </p>
 
-          <NAVChart strategies={[result.threshold, result.dca, result.buy_hold, result.by_temperature]} />
+          <NAVChart strategies={[
+            result.threshold, result.dca, result.buy_hold,
+            result.by_temperature, result.temperature_dca,
+          ]} />
 
           <div className="strategy-grid">
             <StrategyKPI s={result.threshold} />
             {result.dca && <StrategyKPI s={result.dca} />}
             <StrategyKPI s={result.buy_hold} />
             {result.by_temperature && <StrategyKPI s={result.by_temperature} />}
+            {result.temperature_dca && <StrategyKPI s={result.temperature_dca} />}
           </div>
 
           <h4>阈值策略交易明细 ({result.threshold.trade_count})</h4>

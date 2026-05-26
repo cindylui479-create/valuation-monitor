@@ -61,6 +61,8 @@ class BacktestResult:
     buy_hold: StrategyResult
     # SRS v1.3.0 B：按温度档位调仓策略
     by_temperature: StrategyResult | None = None
+    # SRS v1.3.2 B+：温度反向定投（月度买/卖，幅度随温度线性）
+    temperature_dca: StrategyResult | None = None
 
 
 # ---------- 工具 ----------
@@ -209,6 +211,76 @@ def _run_dca(
     return _finalize("dca", nav, trades)
 
 
+def _run_temperature_dca(
+    quotes, temperatures, fee, slip, div_yields, reinvest_div,
+) -> StrategyResult:
+    """SRS v1.3.2 B+：温度反向定投策略。
+
+    规则：
+      温度 ≤ 30  → 月度买入；额度 = total × base_pct × (1 + (30-temp)/30)
+                   即 temp=30 时 1×base，temp=0 时 2×base
+      30 < 温度 < 70 → 停（不投不卖）
+      温度 ≥ 70  → 月度卖出；额度 = total × base_pct × (1 + (temp-70)/30)
+                   即 temp=70 时 1×base，temp=100 时 2×base
+
+    base_pct = 1/120（10y × 12 月）— 让总投入大约等于起始资金。
+
+    实现：起始 cash=1，每月首个交易日触发；NAV = (cash + shares × close)/1
+    与 buy_hold / threshold / by_temperature 同口径，可对比。
+    """
+    cash = Decimal(1)
+    shares = Decimal(0)
+    trades: list[Trade] = []
+    nav: list[NAVPoint] = []
+    seen_months: set[str] = set()
+    prev_d: date | None = None
+    base_pct = Decimal(1) / Decimal(120)
+
+    for d, close in quotes:
+        if close <= 0:
+            continue
+        cur_d = date.fromisoformat(d)
+        if reinvest_div and shares > 0 and prev_d is not None:
+            shares += _reinvest_dividend(shares, close, div_yields.get(d), (cur_d - prev_d).days)
+        total = cash + shares * close
+        nav.append(NAVPoint(date=d, nav=total))
+        prev_d = cur_d
+
+        month_key = d[:7]
+        if month_key in seen_months:
+            continue
+        seen_months.add(month_key)
+
+        temp = temperatures.get(d) if temperatures else None
+        if temp is None:
+            continue
+
+        if temp <= Decimal(30):
+            # 低估月度买入
+            mult = Decimal(1) + (Decimal(30) - temp) / Decimal(30)
+            target = total * base_pct * mult
+            buy_amount = min(cash, target)
+            if buy_amount > 0:
+                new_shares, _ = _apply_buy_cost(buy_amount, close, fee, slip)
+                shares += new_shares
+                cash -= buy_amount
+                trades.append(Trade(d, "BUY", close, None, amount=buy_amount, multiplier=mult))
+        elif temp >= Decimal(70):
+            # 高估月度卖出
+            mult = Decimal(1) + (temp - Decimal(70)) / Decimal(30)
+            target = total * base_pct * mult
+            sell_value = min(shares * close, target)
+            if sell_value > 0 and close > 0:
+                sell_shares = sell_value / close
+                new_cash, _ = _apply_sell_cost(sell_shares, close, fee, slip)
+                shares -= sell_shares
+                cash += new_cash
+                trades.append(Trade(d, "SELL", close, None, amount=new_cash, multiplier=mult))
+        # 30 < temp < 70：停
+
+    return _finalize("temperature_dca", nav, trades)
+
+
 def _run_by_temperature(
     quotes, temperatures, fee, slip, div_yields, reinvest_div,
 ) -> StrategyResult:
@@ -318,6 +390,11 @@ def run_backtest(
                             div_yields, reinvest_dividend)
         if temperatures else None
     )
+    temp_dca = (
+        _run_temperature_dca(in_range, temperatures, fee_rate, slippage_rate,
+                             div_yields, reinvest_dividend)
+        if temperatures else None
+    )
     return BacktestResult(
         index_code=index_code,
         start_date=in_range[0][0] if in_range else start,
@@ -331,6 +408,7 @@ def run_backtest(
         dca=dca,
         buy_hold=bh,
         by_temperature=by_temp,
+        temperature_dca=temp_dca,
     )
 
 

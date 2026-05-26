@@ -7,12 +7,14 @@ const STRATEGY_LABEL: Record<string, string> = {
   dca: "定投策略",
   buy_hold: "买入持有（基准）",
   by_temperature: "按温度调仓",
+  temperature_dca: "温度反向定投",
 };
 const STRATEGY_COLOR: Record<string, string> = {
   threshold: "#2563eb",
   dca: "#f59e0b",
   buy_hold: "#6b7280",
   by_temperature: "#a855f7",
+  temperature_dca: "#0ea5e9",
 };
 
 interface Props {

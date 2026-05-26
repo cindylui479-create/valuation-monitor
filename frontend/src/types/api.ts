@@ -192,7 +192,7 @@ export interface NAVPointDTO {
 }
 
 export interface StrategyResultDTO {
-  name: "threshold" | "dca" | "buy_hold" | "by_temperature";
+  name: "threshold" | "dca" | "buy_hold" | "by_temperature" | "temperature_dca";
   annualized_return: string;
   max_drawdown: string;
   final_nav: string;
@@ -215,4 +215,5 @@ export interface BacktestResponse {
   dca: StrategyResultDTO | null;
   buy_hold: StrategyResultDTO;
   by_temperature: StrategyResultDTO | null;
+  temperature_dca: StrategyResultDTO | null;
 }
