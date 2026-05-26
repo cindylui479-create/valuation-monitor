@@ -212,13 +212,16 @@ def _run_dca(
 def _run_by_temperature(
     quotes, temperatures, fee, slip, div_yields, reinvest_div,
 ) -> StrategyResult:
-    """SRS v1.3.0 B：按温度档位调仓策略。
+    """SRS v1.3.1 B-fix：按温度档位调仓策略。
 
-    规则（与 SRS D1 默认档位对齐）：
-      温度 ≤ 30  → 满仓 100%
-      30 < 温度 < 70 → 持有当前仓位（不主动调）
-      70 ≤ 温度 < 90 → 仓位调到 50%
-      温度 ≥ 90 → 清仓 0%
+    规则（与 SRS D1 默认档位对齐；语义"持有"= 持有标的而非现金）：
+      温度 ≤ 30  → 100% 满仓
+      30 < 温度 < 70 → 100% 满仓（合理区间是基线，应该满仓持有标的）
+      70 ≤ 温度 < 90 → 50% 半仓
+      温度 ≥ 90 → 0% 清仓
+
+    旧 bug：合理区间返回 "不动"，但起始 shares=0 时永远不会开仓 → 错过全部牛市。
+    新设计：合理区间默认满仓；跨过 70 才减仓；跌回 70 以下重新满仓。
 
     实现：每个交易日检查当日温度，若目标仓位 != 当前仓位，按 close 调仓。
     """
@@ -229,13 +232,11 @@ def _run_by_temperature(
     prev_d: date | None = None
 
     def _target_ratio(temp: Decimal) -> Decimal:
-        if temp <= Decimal(30):
-            return Decimal(1)
         if temp < Decimal(70):
-            return Decimal("-1")  # 信号：持有不动
+            return Decimal(1)         # ≤ 30 + 30-70 都满仓
         if temp < Decimal(90):
-            return Decimal("0.5")
-        return Decimal(0)
+            return Decimal("0.5")     # 高估半仓
+        return Decimal(0)             # 极度高估清仓
 
     for d, close in quotes:
         if close <= 0:
@@ -250,8 +251,6 @@ def _run_by_temperature(
         if temp is None or total <= 0:
             continue
         target = _target_ratio(temp)
-        if target < 0:  # 信号：保持当前仓位
-            continue
         target_share_value = total * target
         current_share_value = shares * close
         diff = target_share_value - current_share_value
