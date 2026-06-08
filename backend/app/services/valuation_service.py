@@ -54,18 +54,21 @@ def recompute_for_index(
             start = _start_for_window(end_d, w)
 
             # LG 口径（默认主源）
-            if q.pe_ttm is not None:
-                pe_series = quote_repo.get_series_for_field(
-                    session, index.id, "pe_ttm", start=start, end=d
-                )
-                pb_series = quote_repo.get_series_for_field(
-                    session, index.id, "pb", start=start, end=d
-                )
-                written += _compute_one(
-                    session, index, d, w, "lg",
-                    q.pe_ttm, q.pb, q.dividend_yield,
-                    pe_series, pb_series,
-                )
+            # v1.3.x fix：不再 guard q.pe_ttm is not None。
+            # 港美股 ETF 历史 pe_ttm 全是 None（yfinance 只给当日 spot），
+            # 但 close 历史够 250 天能走 price_fallback 温度。
+            # 让 _compute_one 内部根据 PE/close 数据自适应选 temperature_source。
+            pe_series = quote_repo.get_series_for_field(
+                session, index.id, "pe_ttm", start=start, end=d
+            )
+            pb_series = quote_repo.get_series_for_field(
+                session, index.id, "pb", start=start, end=d
+            )
+            written += _compute_one(
+                session, index, d, w, "lg",
+                q.pe_ttm, q.pb, q.dividend_yield,
+                pe_series, pb_series,
+            )
 
             # CSI 口径（仅 6 只 Tushare 覆盖的指数有数据）
             if q.pe_ttm_csi is not None:

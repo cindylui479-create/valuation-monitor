@@ -22,15 +22,17 @@ def us_index(session):
     return idx
 
 
-def test_skip_when_pe_missing(session, us_index):
+def test_pe_missing_but_close_short_history(session, us_index):
+    """v1.3.x 调整：无 PE 时 valuation 仍写入（close fallback 路径），
+    但 close 历史 < 250 → 温度仍为 None。
+    """
     today = date.today()
-    # 5 行 quotes 全部无 PE（典型 yfinance 历史）
     for i in range(5):
         session.add(IndexQuote(
             index_id=us_index.id,
             date=(today - timedelta(days=i)).isoformat(),
             close=Decimal("500"),
-            pe_ttm=None,  # 关键：无 PE
+            pe_ttm=None,  # 无 PE
             pb=None,
             source="yfinance",
             created_at="2026-05-12T00:00:00Z",
@@ -40,8 +42,15 @@ def test_skip_when_pe_missing(session, us_index):
     dates = [(today - timedelta(days=i)).isoformat() for i in range(5)]
     written = recompute_for_index(session, us_index, dates)
 
-    assert written == 0, "无 PE 的日期都应该被跳过，valuation 表不应有行"
-    assert session.query(Valuation).count() == 0
+    # 5 天 × 3 窗口 = 15 行 valuation（不再 skip），但温度都是 None（close 不足 250）
+    assert written == 15
+    rows = session.query(Valuation).filter_by(date=today.isoformat()).all()
+    assert len(rows) == 3
+    for r in rows:
+        assert r.pe_percentile is None
+        assert r.temperature is None  # close 历史 < 250 → 无 fallback
+        assert r.tier is None
+        assert r.temperature_source is None
 
 
 def test_snapshot_only_pe_does_not_produce_percentile(session, us_index):
@@ -63,8 +72,9 @@ def test_snapshot_only_pe_does_not_produce_percentile(session, us_index):
     dates = [(today - timedelta(days=i)).isoformat() for i in range(5)]
     written = recompute_for_index(session, us_index, dates)
 
-    # 仍然会写 3 行 valuation（3 个窗口），但分位/温度/档位都是 None
-    assert written == 3
+    # v1.3.x：每天 3 个窗口都写 valuation（即使 PE 不足）；分位/温度/档位都是 None
+    # 5 天 × 3 窗口 = 15 行
+    assert written == 15
     rows = session.query(Valuation).filter_by(date=today.isoformat()).all()
     assert len(rows) == 3
     for r in rows:
