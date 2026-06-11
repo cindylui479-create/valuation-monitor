@@ -152,6 +152,42 @@ export default function TemperatureEffectiveness() {
             ],
         };
     }, [data, horizon]);
+    // EFF-2：按年 IC 柱状图（负=绿，信号有效；正=红，信号反向）
+    const yearlyOption = useMemo(() => {
+        if (!data || data.yearly_ic.length === 0)
+            return null;
+        const items = data.yearly_ic;
+        return {
+            grid: { left: 60, right: 30, top: 30, bottom: 40 },
+            tooltip: {
+                trigger: "axis",
+                formatter: (params) => {
+                    const y = items[params[0].dataIndex];
+                    return `${y.period} 年（n=${y.n_samples}）<br/>IC = ${y.spearman_ic ?? "—"}`;
+                },
+            },
+            xAxis: { type: "category", data: items.map((y) => y.period) },
+            yAxis: {
+                type: "value", name: "Spearman IC",
+                axisLine: { onZero: true },
+            },
+            series: [{
+                    type: "bar",
+                    barWidth: "55%",
+                    data: items.map((y) => {
+                        const ic = y.spearman_ic ? parseFloat(y.spearman_ic) : 0;
+                        return {
+                            value: ic,
+                            itemStyle: { color: ic < -0.05 ? "#15803d" : ic > 0.05 ? "#dc2626" : "#9ca3af" },
+                        };
+                    }),
+                    markLine: {
+                        silent: true, symbol: "none",
+                        data: [{ yAxis: 0, lineStyle: { color: "#000", type: "solid", width: 1 } }],
+                    },
+                }],
+        };
+    }, [data]);
     if (isLoading)
         return _jsx("div", { className: "state", children: "\u52A0\u8F7D\u4E2D\u2026" });
     if (!data)
@@ -162,7 +198,16 @@ export default function TemperatureEffectiveness() {
                                         const ic = parseFloat(data.spearman_ic);
                                         return ic <= -0.05 ? "#15803d" : ic >= 0.05 ? "#dc2626" : "#6b7280";
                                     })(),
-                                }, children: parseFloat(data.spearman_ic).toFixed(4) }), _jsxs("div", { style: { fontSize: 12, color: "#6b7280" }, children: [_jsxs("div", { children: ["\u8D1F\u503C\uFF08\u63A5\u8FD1 -1\uFF09= \u6E29\u5EA6\u8D8A\u9AD8\uFF0C\u672A\u6765\u6536\u76CA\u8D8A\u4F4E\uFF0C", _jsx("strong", { children: "\u9006\u6E29\u5EA6\u7B56\u7565\u6709\u6548" }), "\u3002"] }), _jsx("div", { children: "0 \u9644\u8FD1 = \u6E29\u5EA6\u65E0\u9884\u6D4B\u529B\u3002" }), _jsx("div", { children: "\u6B63\u503C = \u53CD\u5411\uFF08\u9AD8\u6E29\u5EA6\u53CD\u800C\u540E\u7EED\u6DA8\uFF09\u2014 \u4E0E\u9006\u5411\u6295\u8D44\u5047\u8BBE\u76F8\u6096\u3002" }), _jsx("div", { style: { marginTop: 4, fontSize: 11 }, children: "|IC| < 0.05 \u901A\u5E38\u89C6\u4E3A\"\u65E0\u663E\u8457\u4FE1\u53F7\"\uFF1B|IC| \u2265 0.05 \u7B97\"\u5F31\u4FE1\u53F7\"\uFF1B\u2265 0.10 \u7B97\"\u4E2D\u7B49\u4FE1\u53F7\"\u3002" })] })] })] })), _jsxs("section", { className: "settings-block", children: [_jsxs("h3", { children: ["5 \u6863\u4F4D vs \u672A\u6765 ", horizon, " \u5929\u6536\u76CA"] }), coarseOption && (_jsx(ReactECharts, { option: coarseOption, style: { height: 360 } })), _jsxs("p", { className: "hint", children: ["\u67F1\u9AD8 = \u8BE5\u6863\u4F4D\u5386\u53F2\u6837\u672C\u7684\u672A\u6765\u6536\u76CA", _jsx("strong", { children: "\u4E2D\u4F4D\u6570" }), "\uFF1B\u7AD6\u7EBF = P25\u2013P75 \u533A\u95F4\uFF08\u4E2D\u95F4 50% \u6837\u672C\u7684\u6536\u76CA\uFF09\u3002 \u7406\u60F3\u5047\u8BBE\uFF1A\u5DE6\u4FA7\uFF08\u4F4E\u4F30\uFF09\u67F1\u9AD8 > 0\uFF0C\u53F3\u4FA7\uFF08\u9AD8\u4F30\uFF09\u67F1\u9AD8 < 0\u3002"] })] }), _jsxs("section", { className: "settings-block", children: [_jsx("h3", { children: "\u6E29\u5EA6\u7CBE\u7EC6\u5206\u6876\uFF0810 \u5EA6\u4E00\u6863\uFF09" }), fineOption && (_jsx(ReactECharts, { option: fineOption, style: { height: 320 } })), _jsx("p", { className: "hint", children: "\u6BCF 10 \u5EA6\u4E00\u4E2A\u6570\u636E\u70B9\u3002\u7406\u60F3\u5047\u8BBE\uFF1A\u6298\u7EBF\u4ECE\u5DE6\u4E0A\u5F80\u53F3\u4E0B\u8D70\uFF08\u6E29\u5EA6\u8D8A\u9AD8\u672A\u6765\u6536\u76CA\u8D8A\u4F4E\uFF09\u3002" })] }), _jsxs("section", { className: "settings-block", children: [_jsx("h3", { children: "\u660E\u7EC6\u6570\u636E" }), _jsxs("table", { className: "table", children: [_jsx("thead", { children: _jsxs("tr", { children: [_jsx("th", { children: "\u6863\u4F4D" }), _jsx("th", { children: "\u6E29\u5EA6" }), _jsx("th", { children: "\u6837\u672C" }), _jsx("th", { children: "\u4E2D\u4F4D\u6536\u76CA" }), _jsx("th", { children: "\u5747\u503C" }), _jsx("th", { children: "P10" }), _jsx("th", { children: "P25" }), _jsx("th", { children: "P75" }), _jsx("th", { children: "P90" }), _jsx("th", { children: "\u80DC\u7387" })] }) }), _jsx("tbody", { children: data.coarse_buckets.map((b) => (_jsxs("tr", { children: [_jsx("td", { children: _jsx("span", { style: {
+                                }, children: parseFloat(data.spearman_ic).toFixed(4) }), _jsxs("div", { style: { fontSize: 12, color: "#6b7280" }, children: [_jsxs("div", { children: ["\u8D1F\u503C\uFF08\u63A5\u8FD1 -1\uFF09= \u6E29\u5EA6\u8D8A\u9AD8\uFF0C\u672A\u6765\u6536\u76CA\u8D8A\u4F4E\uFF0C", _jsx("strong", { children: "\u9006\u6E29\u5EA6\u7B56\u7565\u6709\u6548" }), "\u3002"] }), _jsx("div", { children: "0 \u9644\u8FD1 = \u6E29\u5EA6\u65E0\u9884\u6D4B\u529B\u3002" }), _jsx("div", { children: "\u6B63\u503C = \u53CD\u5411\uFF08\u9AD8\u6E29\u5EA6\u53CD\u800C\u540E\u7EED\u6DA8\uFF09\u2014 \u4E0E\u9006\u5411\u6295\u8D44\u5047\u8BBE\u76F8\u6096\u3002" }), _jsx("div", { style: { marginTop: 4, fontSize: 11 }, children: "|IC| < 0.05 \u901A\u5E38\u89C6\u4E3A\"\u65E0\u663E\u8457\u4FE1\u53F7\"\uFF1B|IC| \u2265 0.05 \u7B97\"\u5F31\u4FE1\u53F7\"\uFF1B\u2265 0.10 \u7B97\"\u4E2D\u7B49\u4FE1\u53F7\"\u3002" })] })] })] })), _jsxs("section", { className: "settings-block", children: [_jsxs("h3", { children: ["5 \u6863\u4F4D vs \u672A\u6765 ", horizon, " \u5929\u6536\u76CA"] }), coarseOption && (_jsx(ReactECharts, { option: coarseOption, style: { height: 360 } })), _jsxs("p", { className: "hint", children: ["\u67F1\u9AD8 = \u8BE5\u6863\u4F4D\u5386\u53F2\u6837\u672C\u7684\u672A\u6765\u6536\u76CA", _jsx("strong", { children: "\u4E2D\u4F4D\u6570" }), "\uFF1B\u7AD6\u7EBF = P25\u2013P75 \u533A\u95F4\uFF08\u4E2D\u95F4 50% \u6837\u672C\u7684\u6536\u76CA\uFF09\u3002 \u7406\u60F3\u5047\u8BBE\uFF1A\u5DE6\u4FA7\uFF08\u4F4E\u4F30\uFF09\u67F1\u9AD8 > 0\uFF0C\u53F3\u4FA7\uFF08\u9AD8\u4F30\uFF09\u67F1\u9AD8 < 0\u3002"] })] }), _jsxs("section", { className: "settings-block", children: [_jsx("h3", { children: "\u6E29\u5EA6\u7CBE\u7EC6\u5206\u6876\uFF0810 \u5EA6\u4E00\u6863\uFF09" }), fineOption && (_jsx(ReactECharts, { option: fineOption, style: { height: 320 } })), _jsx("p", { className: "hint", children: "\u6BCF 10 \u5EA6\u4E00\u4E2A\u6570\u636E\u70B9\u3002\u7406\u60F3\u5047\u8BBE\uFF1A\u6298\u7EBF\u4ECE\u5DE6\u4E0A\u5F80\u53F3\u4E0B\u8D70\uFF08\u6E29\u5EA6\u8D8A\u9AD8\u672A\u6765\u6536\u76CA\u8D8A\u4F4E\uFF09\u3002" })] }), yearlyOption && (_jsxs("section", { className: "settings-block", children: [_jsx("h3", { children: "\u6309\u5E74\u4EFD IC\uFF08\u4FE1\u53F7\u5728\u54EA\u4E9B\u5E74\u4EFD\u6709\u6548\uFF1F\uFF09" }), _jsx(ReactECharts, { option: yearlyOption, style: { height: 280 } }), _jsxs("p", { className: "hint", children: [_jsx("span", { style: { color: "#15803d" }, children: "\u25A0 \u7EFF\uFF08IC < -0.05\uFF09" }), "\u8BE5\u5E74\"\u4F4E\u4E70\u9AD8\u5356\"\u6709\u6548\uFF1B", _jsx("span", { style: { color: "#dc2626" }, children: " \u25A0 \u7EA2\uFF08IC > +0.05\uFF09" }), "\u8BE5\u5E74\u4FE1\u53F7\u53CD\u5411\uFF08\u8FFD\u9AD8\u53CD\u800C\u8D5A\uFF09\uFF1B", _jsx("span", { style: { color: "#9ca3af" }, children: " \u25A0 \u7070" }), "\u65E0\u663E\u8457\u4FE1\u53F7\u3002 \u5168\u5C40\u5747\u503C\u63A9\u76D6\u4E86\u5E74\u5EA6\u5DEE\u5F02 \u2014 \u4FE1\u53F7\u6709\u6548\u6027\u968F\u5E02\u573A\u73AF\u5883\u5F3A\u70C8\u6CE2\u52A8\u3002"] })] })), data.regime_stats.length > 0 && (_jsxs("section", { className: "settings-block", children: [_jsx("h3", { children: "\u5E02\u573A\u73AF\u5883\u5206\u5C42\uFF08\u5165\u573A\u65E5 trailing 250 \u65E5\u6DA8\u8DCC\u5E45 \u00B120% \u5B9A\u725B/\u718A\uFF09" }), _jsxs("table", { className: "table", children: [_jsx("thead", { children: _jsxs("tr", { children: [_jsx("th", { children: "\u73AF\u5883" }), _jsx("th", { children: "\u6837\u672C" }), _jsx("th", { children: "IC" }), _jsxs("th", { children: ["\u4F4E\u4F30\u6876\uFF08<30\uFF09", _jsx("br", {}), "\u4E2D\u4F4D\u6536\u76CA"] }), _jsxs("th", { children: ["\u9AD8\u4F30\u6876\uFF08\u226570\uFF09", _jsx("br", {}), "\u4E2D\u4F4D\u6536\u76CA"] }), _jsx("th", { children: "edge\uFF08\u9AD8\u2212\u4F4E\uFF09" }), _jsx("th", { children: "\u89E3\u8BFB" })] }) }), _jsx("tbody", { children: data.regime_stats.map((r) => {
+                                    const edge = r.edge_pct ? parseFloat(r.edge_pct) : null;
+                                    const edgeColor = edge == null ? "#6b7280"
+                                        : edge < -2 ? "#15803d" : edge > 2 ? "#dc2626" : "#6b7280";
+                                    const verdict = edge == null ? "—"
+                                        : edge < -2 ? "✓ 低买高卖有效"
+                                            : edge > 2 ? "✗ 动量延续（追高更赚）"
+                                                : "无显著差异";
+                                    return (_jsxs("tr", { children: [_jsx("td", { children: _jsx("strong", { children: r.regime }) }), _jsx("td", { children: r.n_samples.toLocaleString() }), _jsx("td", { children: r.spearman_ic ?? "—" }), _jsxs("td", { children: [r.low_temp_median_return ?? "—", "%"] }), _jsxs("td", { children: [r.high_temp_median_return ?? "—", "%"] }), _jsx("td", { style: { color: edgeColor, fontWeight: 600 }, children: edge != null ? `${edge > 0 ? "+" : ""}${edge.toFixed(2)}%` : "—" }), _jsx("td", { style: { fontSize: 12, color: edgeColor }, children: verdict })] }, r.regime));
+                                }) })] }), _jsx("p", { className: "hint", children: "\u5206\u5C42\u53E3\u5F84\uFF1A\u6BCF\u4E2A\u6837\u672C\u6309\"\u5165\u573A\u65E5\u5F80\u524D 250 \u4E2A\u4EA4\u6613\u65E5\u7684\u6DA8\u8DCC\u5E45\"\u5F52\u7C7B \uFF08>+20% \u725B\u5E02 / <-20% \u718A\u5E02 / \u5176\u4F59\u9707\u8361\uFF09\u3002" })] })), _jsxs("section", { className: "settings-block", children: [_jsx("h3", { children: "\u660E\u7EC6\u6570\u636E" }), _jsxs("table", { className: "table", children: [_jsx("thead", { children: _jsxs("tr", { children: [_jsx("th", { children: "\u6863\u4F4D" }), _jsx("th", { children: "\u6E29\u5EA6" }), _jsx("th", { children: "\u6837\u672C" }), _jsx("th", { children: "\u4E2D\u4F4D\u6536\u76CA" }), _jsx("th", { children: "\u5747\u503C" }), _jsx("th", { children: "P10" }), _jsx("th", { children: "P25" }), _jsx("th", { children: "P75" }), _jsx("th", { children: "P90" }), _jsx("th", { children: "\u80DC\u7387" })] }) }), _jsx("tbody", { children: data.coarse_buckets.map((b) => (_jsxs("tr", { children: [_jsx("td", { children: _jsx("span", { style: {
                                                     background: TIER_COLOR[b.tier] ?? "#9ca3af",
                                                     color: "white", padding: "1px 8px",
                                                     borderRadius: 4, fontSize: 11,

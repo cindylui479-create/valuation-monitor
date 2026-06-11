@@ -85,6 +85,23 @@ class IndexEffectiveness(BaseModel):
     edge_pct: str | None                # high - low（理想为负 — 越负说明"低买高卖"越有效）
 
 
+class YearlyIC(BaseModel):
+    """EFF-2：按入场年份分组的 IC（看信号是否只在某些年份有效）。"""
+    period: str                         # "2017"
+    n_samples: int
+    spearman_ic: str | None
+
+
+class RegimeStats(BaseModel):
+    """EFF-2：按市场环境分层（入场日 trailing 250 日涨跌幅定牛/熊/震荡）。"""
+    regime: str                         # 牛市 / 震荡 / 熊市
+    n_samples: int
+    spearman_ic: str | None
+    low_temp_median_return: str | None  # 温度 < 30 桶
+    high_temp_median_return: str | None # 温度 ≥ 70 桶
+    edge_pct: str | None
+
+
 class EffectivenessResponse(BaseModel):
     horizon_days: int
     years: int
@@ -96,6 +113,9 @@ class EffectivenessResponse(BaseModel):
     # SRS v1.3.0 C：
     spearman_ic: str | None             # 全局 IC
     by_index_effectiveness: list[IndexEffectiveness]
+    # EFF-2：
+    yearly_ic: list[YearlyIC] = []
+    regime_stats: list[RegimeStats] = []
 
 
 def _pct(idx: int, n: int) -> int:
@@ -152,43 +172,54 @@ def temperature_effectiveness(
     global_pairs: list[tuple[float, float]] = []
     per_index_pairs: dict[str, list[tuple[float, float]]] = {}
     per_index_meta: dict[str, str] = {}  # code → name
+    # EFF-2：按年 / 按市场环境分层
+    yearly_pairs: dict[str, list[tuple[float, float]]] = {}
+    regime_pairs: dict[str, list[tuple[float, float]]] = {}
     total = 0
 
+    from bisect import bisect_left, bisect_right
+    # trailing 250 交易日 ≈ 365 自然日；行情向前多取 430 天供分层用
+    trailing_cutoff = (date.today() - timedelta(days=years * 365 + 430)).isoformat()
+
     for idx in indices:
-        # 拉这个指数的所有 (date, temperature, close)
-        rows = session.execute(
-            select(IndexQuote.date, IndexQuote.close, Valuation.temperature)
-            .join(Valuation, (Valuation.index_id == IndexQuote.index_id)
-                  & (Valuation.date == IndexQuote.date)
-                  & (Valuation.window == "10y")
-                  & (Valuation.source == "lg"))
+        # 行情序列（含 trailing 窗口，比样本区间向前多取）
+        quote_rows = session.execute(
+            select(IndexQuote.date, IndexQuote.close)
             .where(IndexQuote.index_id == idx.id)
-            .where(IndexQuote.date >= cutoff)
-            .where(Valuation.temperature.is_not(None))
+            .where(IndexQuote.date >= trailing_cutoff)
             .order_by(IndexQuote.date.asc())
         ).all()
+        closes: dict[str, Decimal] = {r[0]: r[1] for r in quote_rows}
+        sorted_dates = sorted(closes.keys())
+        if not sorted_dates:
+            continue
 
+        # 样本：带温度的 valuation 行（≥ cutoff）
+        rows = session.execute(
+            select(Valuation.date, Valuation.temperature)
+            .where(Valuation.index_id == idx.id)
+            .where(Valuation.window == "10y")
+            .where(Valuation.source == "lg")
+            .where(Valuation.date >= cutoff)
+            .where(Valuation.temperature.is_not(None))
+            .order_by(Valuation.date.asc())
+        ).all()
         if not rows:
             continue
 
-        # 建 close 索引（forward-fill 用）
-        closes: dict[str, Decimal] = {r[0]: r[1] for r in rows}
-        sorted_dates = sorted(closes.keys())
-
         n_idx = 0
-        for d, entry_close, temp in rows:
+        for d, temp in rows:
+            entry_close = closes.get(d)
+            if entry_close is None or entry_close == 0:
+                continue
+            # 未来收益
             future = (date.fromisoformat(d) + timedelta(days=horizon)).isoformat()
-            # 找 future 当日或之后最近的 close
             future_close = closes.get(future)
             if future_close is None:
-                # 从 sorted_dates 找 >= future 的最近
-                from bisect import bisect_left
                 pos = bisect_left(sorted_dates, future)
                 if pos >= len(sorted_dates):
                     continue
                 future_close = closes[sorted_dates[pos]]
-            if entry_close == 0:
-                continue
             ret_pct = float((future_close - entry_close) / entry_close * 100)
             t = float(temp)
             label = _bucket_label(t)
@@ -197,6 +228,23 @@ def temperature_effectiveness(
             returns_by_fine[fine_key].append(ret_pct)
             global_pairs.append((t, ret_pct))
             per_index_pairs.setdefault(idx.code, []).append((t, ret_pct))
+            yearly_pairs.setdefault(d[:4], []).append((t, ret_pct))
+
+            # EFF-2：trailing 250 交易日涨跌幅 → 牛/熊/震荡（±20% 阈值）
+            past_target = (date.fromisoformat(d) - timedelta(days=365)).isoformat()
+            ppos = bisect_right(sorted_dates, past_target) - 1
+            if ppos >= 0:
+                past_date = sorted_dates[ppos]
+                # 数据缺口容忍：past_date 距目标不超过 65 天（停牌/缺数据则不分层）
+                gap_limit = (date.fromisoformat(d) - timedelta(days=430)).isoformat()
+                past_close = closes[past_date]
+                if past_date >= gap_limit and past_close > 0:
+                    trailing_ret = float((entry_close - past_close) / past_close * 100)
+                    regime = ("牛市" if trailing_ret > 20
+                              else "熊市" if trailing_ret < -20
+                              else "震荡")
+                    regime_pairs.setdefault(regime, []).append((t, ret_pct))
+
             n_idx += 1
             total += 1
 
@@ -291,6 +339,36 @@ def temperature_effectiveness(
     # 按 |IC| 降序排（最有"信号"的指数在前）
     by_idx.sort(key=lambda b: -abs(float(b.spearman_ic) if b.spearman_ic else 0))
 
+    # EFF-2：按年 IC
+    yearly: list[YearlyIC] = []
+    for year in sorted(yearly_pairs.keys()):
+        pairs = yearly_pairs[year]
+        ic = _spearman(pairs)
+        yearly.append(YearlyIC(
+            period=year, n_samples=len(pairs),
+            spearman_ic=_format_pct(ic, 4) if ic is not None else None,
+        ))
+
+    # EFF-2：牛熊分层
+    regimes: list[RegimeStats] = []
+    for regime in ("牛市", "震荡", "熊市"):
+        pairs = regime_pairs.get(regime, [])
+        if not pairs:
+            continue
+        ic = _spearman(pairs)
+        low_rets = [r for t, r in pairs if t < 30]
+        high_rets = [r for t, r in pairs if t >= 70]
+        low_med = statistics.median(low_rets) if low_rets else None
+        high_med = statistics.median(high_rets) if high_rets else None
+        edge = (high_med - low_med) if (low_med is not None and high_med is not None) else None
+        regimes.append(RegimeStats(
+            regime=regime, n_samples=len(pairs),
+            spearman_ic=_format_pct(ic, 4) if ic is not None else None,
+            low_temp_median_return=_format_pct(low_med) if low_med is not None else None,
+            high_temp_median_return=_format_pct(high_med) if high_med is not None else None,
+            edge_pct=_format_pct(edge) if edge is not None else None,
+        ))
+
     return EffectivenessResponse(
         horizon_days=horizon,
         years=years,
@@ -301,4 +379,6 @@ def temperature_effectiveness(
         indices_coverage=sorted(coverage_by_index.values(), key=lambda c: -c.n_samples),
         spearman_ic=_format_pct(global_ic, 4) if global_ic is not None else None,
         by_index_effectiveness=by_idx,
+        yearly_ic=yearly,
+        regime_stats=regimes,
     )

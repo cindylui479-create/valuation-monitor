@@ -153,6 +153,42 @@ export default function TemperatureEffectiveness() {
     };
   }, [data, horizon]);
 
+  // EFF-2：按年 IC 柱状图（负=绿，信号有效；正=红，信号反向）
+  const yearlyOption = useMemo(() => {
+    if (!data || data.yearly_ic.length === 0) return null;
+    const items = data.yearly_ic;
+    return {
+      grid: { left: 60, right: 30, top: 30, bottom: 40 },
+      tooltip: {
+        trigger: "axis",
+        formatter: (params: any) => {
+          const y = items[params[0].dataIndex];
+          return `${y.period} 年（n=${y.n_samples}）<br/>IC = ${y.spearman_ic ?? "—"}`;
+        },
+      },
+      xAxis: { type: "category", data: items.map((y) => y.period) },
+      yAxis: {
+        type: "value", name: "Spearman IC",
+        axisLine: { onZero: true },
+      },
+      series: [{
+        type: "bar",
+        barWidth: "55%",
+        data: items.map((y) => {
+          const ic = y.spearman_ic ? parseFloat(y.spearman_ic) : 0;
+          return {
+            value: ic,
+            itemStyle: { color: ic < -0.05 ? "#15803d" : ic > 0.05 ? "#dc2626" : "#9ca3af" },
+          };
+        }),
+        markLine: {
+          silent: true, symbol: "none",
+          data: [{ yAxis: 0, lineStyle: { color: "#000", type: "solid", width: 1 } }],
+        },
+      }],
+    };
+  }, [data]);
+
   if (isLoading) return <div className="state">加载中…</div>;
   if (!data) return null;
 
@@ -247,6 +283,68 @@ export default function TemperatureEffectiveness() {
           每 10 度一个数据点。理想假设：折线从左上往右下走（温度越高未来收益越低）。
         </p>
       </section>
+
+      {/* EFF-2：按年 IC */}
+      {yearlyOption && (
+        <section className="settings-block">
+          <h3>按年份 IC（信号在哪些年份有效？）</h3>
+          <ReactECharts option={yearlyOption} style={{ height: 280 }} />
+          <p className="hint">
+            <span style={{ color: "#15803d" }}>■ 绿（IC &lt; -0.05）</span>该年"低买高卖"有效；
+            <span style={{ color: "#dc2626" }}> ■ 红（IC &gt; +0.05）</span>该年信号反向（追高反而赚）；
+            <span style={{ color: "#9ca3af" }}> ■ 灰</span>无显著信号。
+            全局均值掩盖了年度差异 — 信号有效性随市场环境强烈波动。
+          </p>
+        </section>
+      )}
+
+      {/* EFF-2：牛熊分层 */}
+      {data.regime_stats.length > 0 && (
+        <section className="settings-block">
+          <h3>市场环境分层（入场日 trailing 250 日涨跌幅 ±20% 定牛/熊）</h3>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>环境</th>
+                <th>样本</th>
+                <th>IC</th>
+                <th>低估桶（&lt;30）<br/>中位收益</th>
+                <th>高估桶（≥70）<br/>中位收益</th>
+                <th>edge（高−低）</th>
+                <th>解读</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.regime_stats.map((r) => {
+                const edge = r.edge_pct ? parseFloat(r.edge_pct) : null;
+                const edgeColor = edge == null ? "#6b7280"
+                  : edge < -2 ? "#15803d" : edge > 2 ? "#dc2626" : "#6b7280";
+                const verdict = edge == null ? "—"
+                  : edge < -2 ? "✓ 低买高卖有效"
+                  : edge > 2 ? "✗ 动量延续（追高更赚）"
+                  : "无显著差异";
+                return (
+                  <tr key={r.regime}>
+                    <td><strong>{r.regime}</strong></td>
+                    <td>{r.n_samples.toLocaleString()}</td>
+                    <td>{r.spearman_ic ?? "—"}</td>
+                    <td>{r.low_temp_median_return ?? "—"}%</td>
+                    <td>{r.high_temp_median_return ?? "—"}%</td>
+                    <td style={{ color: edgeColor, fontWeight: 600 }}>
+                      {edge != null ? `${edge > 0 ? "+" : ""}${edge.toFixed(2)}%` : "—"}
+                    </td>
+                    <td style={{ fontSize: 12, color: edgeColor }}>{verdict}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <p className="hint">
+            分层口径：每个样本按"入场日往前 250 个交易日的涨跌幅"归类
+            （&gt;+20% 牛市 / &lt;-20% 熊市 / 其余震荡）。
+          </p>
+        </section>
+      )}
 
       <section className="settings-block">
         <h3>明细数据</h3>

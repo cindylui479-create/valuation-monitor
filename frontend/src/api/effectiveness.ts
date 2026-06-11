@@ -35,6 +35,21 @@ export interface IndexEffectiveness {
   edge_pct: string | null;
 }
 
+export interface YearlyIC {
+  period: string;
+  n_samples: number;
+  spearman_ic: string | null;
+}
+
+export interface RegimeStats {
+  regime: string;
+  n_samples: number;
+  spearman_ic: string | null;
+  low_temp_median_return: string | null;
+  high_temp_median_return: string | null;
+  edge_pct: string | null;
+}
+
 export interface EffectivenessResponse {
   horizon_days: number;
   years: number;
@@ -45,6 +60,8 @@ export interface EffectivenessResponse {
   indices_coverage: IndexCoverage[];
   spearman_ic: string | null;
   by_index_effectiveness: IndexEffectiveness[];
+  yearly_ic: YearlyIC[];
+  regime_stats: RegimeStats[];
 }
 
 export function fetchEffectiveness(
