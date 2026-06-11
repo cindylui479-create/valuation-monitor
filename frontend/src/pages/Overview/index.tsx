@@ -4,6 +4,7 @@ import { fetchOverview } from "@/api/overview";
 import { usePeSource } from "@/hooks/usePeSource";
 import MarketColumn from "./MarketColumn";
 import TodayDigest from "./TodayDigest";
+import StalenessBanner from "./StalenessBanner";
 import type { OverviewMarket } from "@/types/api";
 
 type ViewMode = "heatmap" | "table";
@@ -78,6 +79,8 @@ python -m scripts.init_history --market A --years 10`}
 
   return (
     <div className="overview">
+      <StalenessBanner asOf={data.as_of} />
+
       <TodayDigest />
 
       <div className="overview-header">

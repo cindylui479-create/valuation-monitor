@@ -9,6 +9,7 @@
  * 用户首次启用时浏览器会问"是否允许通知"，永久授权后不再问。
  */
 import { useEffect, useRef, useState } from "react";
+import { fetchHealth } from "@/api/health";
 import { fetchOpportunities, fetchTierTransitions } from "@/api/opportunities";
 const POLL_MS = 60_000; // 60 秒（不要太频繁，避免烦人 + 节省 API）
 const STORAGE_KEY = "valmon.notif.enabled";
@@ -23,6 +24,7 @@ export function useNotifications() {
     const [enabled, setEnabled] = useState(() => localStorage.getItem(STORAGE_KEY) === "1" && permission === "granted");
     const seenTransitionsRef = useRef(new Set());
     const seenLowRef = useRef(new Set());
+    const seenFailuresRef = useRef(new Set());
     const initializedRef = useRef(false);
     const request = async () => {
         if (typeof Notification === "undefined")
@@ -49,12 +51,26 @@ export function useNotifications() {
         let stopped = false;
         const poll = async () => {
             try {
-                const [opps, trans] = await Promise.all([
+                const [opps, trans, health] = await Promise.all([
                     fetchOpportunities(),
                     fetchTierTransitions(7),
+                    fetchHealth(),
                 ]);
                 if (stopped)
                     return;
+                // OPS-3：pipeline 失败 → 弹通知（按 market+last_run_at 去重，每次失败只弹一次）
+                for (const p of health.pipeline) {
+                    if (p.status !== "FAILED" && p.status !== "PARTIAL")
+                        continue;
+                    const key = `pipeline-${p.market}@${p.last_run_at}`;
+                    if (seenFailuresRef.current.has(key))
+                        continue;
+                    seenFailuresRef.current.add(key);
+                    new Notification(`⚠ 数据同步${p.status === "FAILED" ? "失败" : "部分失败"} · ${p.market} 市场`, {
+                        body: (p.errors ?? []).slice(0, 2).join("；") || "详情见 设置 → 运行历史",
+                        tag: key,
+                    });
+                }
                 const newTransKeys = _serialize_transitions(trans.items);
                 const newLowCodes = _serialize_low(opps.low_valuations);
                 if (!initializedRef.current) {

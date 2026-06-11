@@ -1,4 +1,6 @@
 import { NavLink } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { fetchHealth } from "@/api/health";
 import { useNotifications } from "@/hooks/useNotifications";
 
 const NAV = [
@@ -12,6 +14,16 @@ const NAV = [
 
 export default function Header() {
   const notif = useNotifications();
+  // OPS-3：pipeline 失败时在「设置」上挂红点
+  const health = useQuery({
+    queryKey: ["health-nav"],
+    queryFn: fetchHealth,
+    refetchInterval: 5 * 60_000,
+    staleTime: 60_000,
+  });
+  const hasPipelineFailure = (health.data?.pipeline ?? []).some(
+    (p) => p.status === "FAILED" || p.status === "PARTIAL",
+  );
   const notifLabel =
     notif.permission === "denied" ? "🔕 通知已拒绝"
     : notif.enabled ? "🔔 通知开"
@@ -30,8 +42,19 @@ export default function Header() {
             to={item.to}
             end={item.to === "/"}
             className={({ isActive }) => "nav-link" + (isActive ? " active" : "")}
+            style={{ position: "relative" }}
           >
             {item.label}
+            {item.to === "/settings" && hasPipelineFailure && (
+              <span
+                title="数据同步出现失败，查看 设置 → 运行历史"
+                style={{
+                  position: "absolute", top: 0, right: -8,
+                  width: 8, height: 8, borderRadius: "50%",
+                  background: "#dc2626",
+                }}
+              />
+            )}
           </NavLink>
         ))}
       </nav>
