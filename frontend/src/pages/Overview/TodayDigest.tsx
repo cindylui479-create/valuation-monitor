@@ -115,7 +115,12 @@ export default function TodayDigest() {
 
   return (
     <section className="settings-block" style={{ marginBottom: 16 }}>
-      <h3>🔔 今日动态</h3>
+      <h3>
+        🔔 今日动态
+        <span style={{ fontSize: 11, fontWeight: 400, color: "#6b7280", marginLeft: 10 }}>
+          估值信号为约 1 年视角，非短线择时（实证见 信号 → 温度有效性）
+        </span>
+      </h3>
 
       {low.length > 0 && (
         <div style={{ marginBottom: 12 }}>
